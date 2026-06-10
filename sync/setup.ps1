@@ -272,14 +272,15 @@ function Step-MariaDB {
     # Setup database
     Write-Info "Creation de la base de donnees..."
 
-    $setupSql = @"
-CREATE DATABASE IF NOT EXISTS $DbName CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-CREATE USER IF NOT EXISTS '$DbUser'@'localhost' IDENTIFIED BY '$DbPassword';
-CREATE USER IF NOT EXISTS '$DbUser'@'%' IDENTIFIED BY '$DbPassword';
-GRANT ALL PRIVILEGES ON $DbName.* TO '$DbUser'@'localhost';
-GRANT ALL PRIVILEGES ON $DbName.* TO '$DbUser'@'%';
+    $setupSql = @'
+CREATE DATABASE IF NOT EXISTS {DBNAME} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER IF NOT EXISTS '{DBUSER}'@'localhost' IDENTIFIED BY '{DBPASS}';
+CREATE USER IF NOT EXISTS '{DBUSER}'@'%' IDENTIFIED BY '{DBPASS}';
+GRANT ALL PRIVILEGES ON {DBNAME}.* TO '{DBUSER}'@'localhost';
+GRANT ALL PRIVILEGES ON {DBNAME}.* TO '{DBUSER}'@'%';
 FLUSH PRIVILEGES;
-"@
+'@
+    $setupSql = $setupSql -replace '\{DBNAME\}', $DbName -replace '\{DBUSER\}', $DbUser -replace '\{DBPASS\}', $DbPassword
     $setupSql | & $mysqlCmd -u root -proot 2>$null
     if ($LASTEXITCODE -ne 0) {
         # Try without password (fresh install)
@@ -321,9 +322,9 @@ FLUSH PRIVILEGES;
         if ($LASTEXITCODE -ne 0) {
             # Fallback: read and execute without DELIMITER (strip it)
             $procContent = Get-Content $procFile -Raw
-            $procContent = $procContent -replace "DELIMITER \$\$", ""
-            $procContent = $procContent -replace "\$\$", ";"
-            $procContent = $procContent -replace "DELIMITER ;", ""
+            $procContent = $procContent -replace 'DELIMITER \$\$', ''
+            $procContent = $procContent -replace '\$\$', ';'
+            $procContent = $procContent -replace 'DELIMITER ;', ''
             $procContent | & $mysqlCmd -u $DbUser -p$DbPassword $DbName 2>$null
         }
         Write-Ok "Procedure refresh_ventes_daily() creee"
@@ -396,14 +397,15 @@ function Step-Tailscale {
     # Write VPN credentials to MariaDB so Electron clients can auto-configure
     if ($script:TailscaleIP -and $script:MysqlCmd) {
         Write-Info "Ecriture de la config VPN dans la base..."
-        $vpnSql = @"
+        $vpnSql = @'
 INSERT INTO _vpn_config (id, tailscale_ip, auth_key, tailnet_name)
-VALUES (1, '$($script:TailscaleIP)', '$($script:TailscaleKey)', '')
+VALUES (1, '{TSIP}', '{TSKEY}', '')
 ON DUPLICATE KEY UPDATE
   tailscale_ip = VALUES(tailscale_ip),
   auth_key = VALUES(auth_key),
   updated_at = CURRENT_TIMESTAMP;
-"@
+'@
+        $vpnSql = $vpnSql -replace '\{TSIP\}', $script:TailscaleIP -replace '\{TSKEY\}', $script:TailscaleKey
         $vpnSql | & $script:MysqlCmd -u $DbUser -p$DbPassword $DbName 2>$null
         Write-Ok "Config VPN enregistree dans _vpn_config"
     }
