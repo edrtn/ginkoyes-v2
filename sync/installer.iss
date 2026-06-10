@@ -42,9 +42,10 @@ Name: "{group}\Desinstaller {#MyAppName}"; Filename: "{uninstallexe}"
 
 [Run]
 Filename: "powershell.exe"; \
-  Parameters: "-ExecutionPolicy Bypass -File ""{app}\setup.ps1"""; \
+  Parameters: "-ExecutionPolicy Bypass -NoExit -File ""{app}\setup.ps1"""; \
+  Description: "Lancer la configuration du serveur Ginkoyes"; \
   StatusMsg: "Configuration du serveur Ginkoyes..."; \
-  Flags: runhidden waituntilterminated runascurrentuser
+  Flags: postinstall waituntilterminated runascurrentuser
 
 [UninstallRun]
 Filename: "powershell.exe"; \
