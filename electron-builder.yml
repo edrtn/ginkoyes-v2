@@ -7,7 +7,7 @@ directories:
 # Auto-update : publier les releases sur GitHub
 publish:
   provider: github
-  owner: edwardrenton
+  owner: edrtn
   repo: ginkoyes-v2
 
 files:
