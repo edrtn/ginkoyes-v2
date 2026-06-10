@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { STOCK_GLOBAL, buildStockWhere } from "@/lib/queries";
+import { cached, TTL } from "@/lib/cache";
 
 export async function GET(request: NextRequest) {
   try {
@@ -10,10 +11,14 @@ export async function GET(request: NextRequest) {
     const rayon = searchParams.get("rayon") || undefined;
     const collection = searchParams.get("collection") || undefined;
 
-    const { where, values } = buildStockWhere({ q, marque, rayon, collection });
+    const cacheKey = `stock:${q || ""}:${marque || ""}:${rayon || ""}:${collection || ""}`;
 
-    const sql = `${STOCK_GLOBAL} ${where} GROUP BY a.ART_ID, a.ART_NOM, a.ART_REFMRK, mrk.MRK_NOM, ray.RAY_NOM ORDER BY STOCK_TOTAL DESC LIMIT 100`;
-    const rows = await query(sql, values);
+    const rows = await cached(cacheKey, async () => {
+      const { where, values } = buildStockWhere({ q, marque, rayon, collection });
+      const sql = `${STOCK_GLOBAL} ${where} GROUP BY a.ART_ID, a.ART_NOM, a.ART_REFMRK, mrk.MRK_NOM, ray.RAY_NOM ORDER BY STOCK_TOTAL DESC LIMIT 100`;
+      return query(sql, values);
+    }, TTL.DEFAULT);
+
     return NextResponse.json(rows);
   } catch (error) {
     console.error("Error fetching stock:", error);

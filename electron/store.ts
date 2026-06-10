@@ -9,8 +9,14 @@ export interface DbConfig {
   database: string;
 }
 
+export interface VpnConfig {
+  authKey: string;
+  enabled: boolean;
+}
+
 export interface AppConfig {
   db: DbConfig;
+  vpn: VpnConfig;
 }
 
 const defaults: AppConfig = {
@@ -21,6 +27,10 @@ const defaults: AppConfig = {
     user: "ginkoyes",
     password: "ginkoyes",
     database: "ginkoyes",
+  },
+  vpn: {
+    authKey: "",
+    enabled: false,
   },
 };
 

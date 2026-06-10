@@ -55,14 +55,20 @@ async function getConnectionWithFailover(): Promise<PoolConnection> {
     const conn = await p.getConnection();
     return conn;
   } catch {
-    // LAN failed — try Tailscale if configured
-    if (!config.tailscaleHost) throw new Error("Connexion LAN échouée, aucun hôte Tailscale configuré");
+    // LAN failed — try Tailscale/tunnel if configured
+    if (!config.tailscaleHost && !config.tunnelPort) {
+      throw new Error("Connexion LAN échouée, aucun hôte Tailscale configuré");
+    }
 
     await resetPool();
 
+    // If a VPN tunnel is active, connect through it (localhost:tunnelPort)
+    // Otherwise, connect directly to the Tailscale IP
+    const usesTunnel = config.tunnelPort > 0;
+
     pool = mysql.createPool({
-      host: config.tailscaleHost,
-      port: config.port,
+      host: usesTunnel ? "127.0.0.1" : config.tailscaleHost,
+      port: usesTunnel ? config.tunnelPort : config.port,
       user: config.user,
       password: config.password,
       database: config.database,

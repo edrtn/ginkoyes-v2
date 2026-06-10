@@ -7,6 +7,7 @@ import {
   DASHBOARD_CA_PAR_MARQUE,
   DASHBOARD_CA_MENSUEL,
 } from "@/lib/queries";
+import { cached, TTL } from "@/lib/cache";
 
 export async function GET(request: NextRequest) {
   try {
@@ -17,34 +18,40 @@ export async function GET(request: NextRequest) {
     const from = searchParams.get("from") || `${now.getFullYear()}-01-01`;
     const to = searchParams.get("to") || `${now.getFullYear() + 1}-01-01`;
 
-    const dateParams = [from, to];
+    const cacheKey = `dashboard:${from}:${to}`;
 
-    const [caTotal, topArticles, caParRayon, caParMarque, caMensuel] =
-      await Promise.all([
-        queryFirst(DASHBOARD_CA_TOTAL, dateParams),
-        query(DASHBOARD_TOP_ARTICLES, dateParams),
-        query(DASHBOARD_CA_PAR_RAYON, dateParams),
-        query(DASHBOARD_CA_PAR_MARQUE, dateParams),
-        query(DASHBOARD_CA_MENSUEL, dateParams),
-      ]);
+    const result = await cached(cacheKey, async () => {
+      const dateParams = [from, to];
 
-    const nbTickets =
-      Number((caTotal as Record<string, unknown>)?.NB_TICKETS) || 0;
-    const caValue =
-      Number((caTotal as Record<string, unknown>)?.CA_TOTAL) || 0;
-    const panierMoyen = nbTickets > 0 ? caValue / nbTickets : 0;
+      const [caTotal, topArticles, caParRayon, caParMarque, caMensuel] =
+        await Promise.all([
+          queryFirst(DASHBOARD_CA_TOTAL, dateParams),
+          query(DASHBOARD_TOP_ARTICLES, dateParams),
+          query(DASHBOARD_CA_PAR_RAYON, dateParams),
+          query(DASHBOARD_CA_PAR_MARQUE, dateParams),
+          query(DASHBOARD_CA_MENSUEL, dateParams),
+        ]);
 
-    return NextResponse.json({
-      caTotal: caValue,
-      nbTickets,
-      panierMoyen,
-      topArticles,
-      caParRayon,
-      caParMarque,
-      caMensuel,
-      from,
-      to,
-    });
+      const nbTickets =
+        Number((caTotal as Record<string, unknown>)?.NB_TICKETS) || 0;
+      const caValue =
+        Number((caTotal as Record<string, unknown>)?.CA_TOTAL) || 0;
+      const panierMoyen = nbTickets > 0 ? caValue / nbTickets : 0;
+
+      return {
+        caTotal: caValue,
+        nbTickets,
+        panierMoyen,
+        topArticles,
+        caParRayon,
+        caParMarque,
+        caMensuel,
+        from,
+        to,
+      };
+    }, TTL.DEFAULT);
+
+    return NextResponse.json(result);
   } catch (error) {
     console.error("Error fetching dashboard:", error);
     return NextResponse.json(

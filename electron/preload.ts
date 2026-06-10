@@ -21,4 +21,13 @@ contextBridge.exposeInMainWorld("electronAPI", {
     // Return cleanup function
     return () => ipcRenderer.removeListener("update-status", handler);
   },
+
+  // VPN
+  getVpnConfig: () => ipcRenderer.invoke("get-vpn-config"),
+  setVpnConfig: (config: Record<string, unknown>) =>
+    ipcRenderer.invoke("set-vpn-config", config),
+  vpnStart: () => ipcRenderer.invoke("vpn-start"),
+  vpnStop: () => ipcRenderer.invoke("vpn-stop"),
+  vpnStatus: () => ipcRenderer.invoke("vpn-status"),
+  vpnRefreshFromDb: () => ipcRenderer.invoke("vpn-refresh-from-db"),
 });

@@ -525,8 +525,8 @@ export default function ArticleDetailPage({
                             <span className={`text-sm font-bold ${info.qte > 0 ? "text-indigo-700" : "text-gray-300"}`}>
                               {info.qte}
                             </span>
-                            {info.pump > 0 && (
-                              <span className="text-[10px] text-gray-400">{info.pump.toFixed(2)}{"€"}</span>
+                            {info.pump != null && info.pump > 0 && (
+                              <span className="text-[10px] text-gray-400">{Number(info.pump).toFixed(2)}{"€"}</span>
                             )}
                           </div>
                         ))}

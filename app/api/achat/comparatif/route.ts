@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { ACHAT_VENTES_COMPARATIF } from "@/lib/queries";
+import { cached, TTL } from "@/lib/cache";
 
 interface VenteRow {
   GENRE: string | null;
@@ -79,24 +80,30 @@ export async function GET(request: NextRequest) {
     }
 
     const m = marque.toUpperCase();
-    const [rowsN1, rowsN2] = await Promise.all([
-      query<VenteRow>(ACHAT_VENTES_COMPARATIF, [fromN1, toN1, fromN1, toN1, m]),
-      query<VenteRow>(ACHAT_VENTES_COMPARATIF, [fromN2, toN2, fromN2, toN2, m]),
-    ]);
+    const cacheKey = `achat-comparatif:${m}:${fromN1}:${toN1}:${fromN2}:${toN2}`;
 
-    const n1 = buildPeriodData(rowsN1);
-    const n2 = buildPeriodData(rowsN2);
+    const result = await cached(cacheKey, async () => {
+      const [rowsN1, rowsN2] = await Promise.all([
+        query<VenteRow>(ACHAT_VENTES_COMPARATIF, [fromN1, toN1, m]),
+        query<VenteRow>(ACHAT_VENTES_COMPARATIF, [fromN2, toN2, m]),
+      ]);
 
-    const evol = (a: number, b: number) => (b !== 0 ? ((a - b) / Math.abs(b)) * 100 : 0);
+      const n1 = buildPeriodData(rowsN1);
+      const n2 = buildPeriodData(rowsN2);
 
-    const evolution = {
-      caTtc: evol(n1.total.caTtc, n2.total.caTtc),
-      marge: n1.total.marge - n2.total.marge, // en points
-      qte: evol(n1.total.qte, n2.total.qte),
-      prixMoyen: evol(n1.total.prixMoyen, n2.total.prixMoyen),
-    };
+      const evol = (a: number, b: number) => (b !== 0 ? ((a - b) / Math.abs(b)) * 100 : 0);
 
-    return NextResponse.json({ n1, n2, evolution });
+      const evolution = {
+        caTtc: evol(n1.total.caTtc, n2.total.caTtc),
+        marge: n1.total.marge - n2.total.marge, // en points
+        qte: evol(n1.total.qte, n2.total.qte),
+        prixMoyen: evol(n1.total.prixMoyen, n2.total.prixMoyen),
+      };
+
+      return { n1, n2, evolution };
+    }, TTL.DEFAULT);
+
+    return NextResponse.json(result);
   } catch (error) {
     console.error("Error fetching comparatif:", error);
     return NextResponse.json(

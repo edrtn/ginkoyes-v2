@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { ACHAT_TAUX_SORTIE } from "@/lib/queries";
+import { cached, TTL } from "@/lib/cache";
 
 interface TauxSortieRow {
   ART_ID: number;
@@ -32,52 +33,59 @@ export async function GET(request: NextRequest) {
     }
 
     const colId = Number(collectionId);
-    const rows = await query<TauxSortieRow>(ACHAT_TAUX_SORTIE, [
-      colId,
-      colId,
-      marque.toUpperCase(),
-    ]);
+    const m = marque.toUpperCase();
+    const cacheKey = `achat-taux:${colId}:${m}`;
 
-    let totalQteCommandee = 0;
-    let totalQteRecue = 0;
-    let totalQteVendue = 0;
+    const result = await cached(cacheKey, async () => {
+      const rows = await query<TauxSortieRow>(ACHAT_TAUX_SORTIE, [
+        colId,
+        colId,
+        m,
+      ]);
 
-    const articles = rows.map((r) => {
-      const qteCommandee = Number(r.QTE_COMMANDEE) || 0;
-      const qteRecue = Number(r.QTE_RECUE) || 0;
-      const qteVendue = Number(r.QTE_VENDUE) || 0;
-      totalQteCommandee += qteCommandee;
-      totalQteRecue += qteRecue;
-      totalQteVendue += qteVendue;
+      let totalQteCommandee = 0;
+      let totalQteRecue = 0;
+      let totalQteVendue = 0;
+
+      const articles = rows.map((r) => {
+        const qteCommandee = Number(r.QTE_COMMANDEE) || 0;
+        const qteRecue = Number(r.QTE_RECUE) || 0;
+        const qteVendue = Number(r.QTE_VENDUE) || 0;
+        totalQteCommandee += qteCommandee;
+        totalQteRecue += qteRecue;
+        totalQteVendue += qteVendue;
+
+        return {
+          artId: r.ART_ID,
+          nom: r.ART_NOM,
+          ref: r.ART_REFMRK,
+          genre: r.GENRE || "",
+          couleur: r.COULEUR || "",
+          rayon: r.RAYON || "",
+          famille: r.FAMILLE || "",
+          sousFamille: r.SOUS_FAMILLE || "",
+          qteCommandee,
+          qteRecue,
+          qteVendue,
+          tauxSortie: qteCommandee > 0 ? (qteVendue / qteCommandee) * 100 : 0,
+          montantAchatNet: Number(r.MONTANT_ACHAT_NET) || 0,
+          pxVente: Number(r.PX_VENTE_UNITAIRE) || 0,
+        };
+      });
 
       return {
-        artId: r.ART_ID,
-        nom: r.ART_NOM,
-        ref: r.ART_REFMRK,
-        genre: r.GENRE || "",
-        couleur: r.COULEUR || "",
-        rayon: r.RAYON || "",
-        famille: r.FAMILLE || "",
-        sousFamille: r.SOUS_FAMILLE || "",
-        qteCommandee,
-        qteRecue,
-        qteVendue,
-        tauxSortie: qteCommandee > 0 ? (qteVendue / qteCommandee) * 100 : 0,
-        montantAchatNet: Number(r.MONTANT_ACHAT_NET) || 0,
-        pxVente: Number(r.PX_VENTE_UNITAIRE) || 0,
+        articles,
+        totaux: {
+          qteCommandee: totalQteCommandee,
+          qteRecue: totalQteRecue,
+          qteVendue: totalQteVendue,
+          tauxSortieMoyen:
+            totalQteCommandee > 0 ? (totalQteVendue / totalQteCommandee) * 100 : 0,
+        },
       };
-    });
+    }, TTL.DEFAULT);
 
-    return NextResponse.json({
-      articles,
-      totaux: {
-        qteCommandee: totalQteCommandee,
-        qteRecue: totalQteRecue,
-        qteVendue: totalQteVendue,
-        tauxSortieMoyen:
-          totalQteCommandee > 0 ? (totalQteVendue / totalQteCommandee) * 100 : 0,
-      },
-    });
+    return NextResponse.json(result);
   } catch (error) {
     console.error("Error fetching taux de sortie:", error);
     return NextResponse.json(

@@ -26,7 +26,7 @@ export default function UpdateBanner() {
 
   useEffect(() => {
     const api = getAPI();
-    if (!api) return;
+    if (!api || typeof api.onUpdateStatus !== "function") return;
 
     const cleanup = api.onUpdateStatus((data) => {
       setUpdate(data);

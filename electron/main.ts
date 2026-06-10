@@ -1,9 +1,11 @@
 import { app, BrowserWindow, ipcMain, Menu } from "electron";
 import path from "path";
 import mysql from "mysql2/promise";
-import store, { DbConfig } from "./store";
+import store, { DbConfig, VpnConfig } from "./store";
 import { startNextServer, stopNextServer } from "./server";
 import { setupAutoUpdater } from "./updater";
+import { startVpn, stopVpn, getVpnStatus } from "./vpn";
+import { startTunnel, stopTunnel, TUNNEL_PORT } from "./tunnel";
 
 let mainWindow: BrowserWindow | null = null;
 let serverPort: number | null = null;
@@ -15,6 +17,7 @@ let serverPort: number | null = null;
 
 function getDbEnvVars(): Record<string, string> {
   const db = store.get("db");
+  const vpn = store.get("vpn");
   return {
     DB_LAN_HOST: db.lanHost || "127.0.0.1",
     DB_TAILSCALE_HOST: db.tailscaleHost || "",
@@ -22,6 +25,8 @@ function getDbEnvVars(): Record<string, string> {
     DB_USER: db.user || "ginkoyes",
     DB_PASSWORD: db.password || "ginkoyes",
     DB_NAME: db.database || "ginkoyes",
+    // When VPN is enabled, tell Next.js to use the local tunnel for Tailscale fallback
+    DB_TUNNEL_PORT: vpn.enabled ? String(TUNNEL_PORT) : "",
   };
 }
 
@@ -144,6 +149,110 @@ function setupIpcHandlers() {
   ipcMain.handle("get-version", () => {
     return app.getVersion();
   });
+
+  // --- VPN handlers ---
+
+  ipcMain.handle("get-vpn-config", () => {
+    return store.get("vpn");
+  });
+
+  ipcMain.handle("set-vpn-config", async (_event, config: VpnConfig) => {
+    store.set("vpn", config);
+    return { success: true };
+  });
+
+  ipcMain.handle("vpn-start", async () => {
+    const vpn = store.get("vpn");
+    if (!vpn.authKey) {
+      return { success: false, error: "Aucune auth key configuree" };
+    }
+
+    const db = store.get("db");
+    if (!db.tailscaleHost) {
+      return { success: false, error: "Aucun hote Tailscale configure" };
+    }
+
+    try {
+      // Start the TCP tunnel (idempotent if already running)
+      await startTunnel(db.tailscaleHost, db.port || 3306, getVpnStatus().socksPort);
+    } catch {
+      // Tunnel might already be running — that's OK
+    }
+
+    const status = await startVpn(vpn.authKey);
+    return { success: status.state === "connected", status };
+  });
+
+  ipcMain.handle("vpn-stop", () => {
+    stopVpn();
+    stopTunnel();
+    return { success: true };
+  });
+
+  ipcMain.handle("vpn-status", () => {
+    return getVpnStatus();
+  });
+
+  ipcMain.handle("vpn-refresh-from-db", async () => {
+    try {
+      await autoConfigureVpnFromDb();
+      return {
+        success: true,
+        vpn: store.get("vpn"),
+        tailscaleHost: store.get("db").tailscaleHost,
+      };
+    } catch (err) {
+      return {
+        success: false,
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
+  });
+}
+
+// ============================================================
+// Auto-configure VPN from database
+// When on LAN, reads _vpn_config to get Tailscale credentials
+// so the client is zero-config for VPN.
+// ============================================================
+
+async function autoConfigureVpnFromDb(): Promise<void> {
+  const db = store.get("db");
+  if (!db.lanHost) return;
+
+  let conn;
+  try {
+    conn = await mysql.createConnection({
+      host: db.lanHost,
+      port: db.port || 3306,
+      user: db.user,
+      password: db.password,
+      database: db.database,
+      connectTimeout: 3000,
+    });
+
+    const [rows] = await conn.execute(
+      "SELECT tailscale_ip, auth_key, tailnet_name FROM _vpn_config WHERE id = 1"
+    );
+    const vpnRow = (rows as Array<{ tailscale_ip: string; auth_key: string; tailnet_name: string }>)[0];
+
+    if (vpnRow && vpnRow.tailscale_ip && vpnRow.auth_key) {
+      // Update db.tailscaleHost from the server's Tailscale IP
+      store.set("db", { ...db, tailscaleHost: vpnRow.tailscale_ip });
+
+      // Update VPN config
+      store.set("vpn", {
+        authKey: vpnRow.auth_key,
+        enabled: true,
+      });
+
+      console.log(`[VPN] Auto-configured from DB: ${vpnRow.tailscale_ip}`);
+    }
+  } catch {
+    // LAN not available or table doesn't exist — skip silently
+  } finally {
+    if (conn) await conn.end().catch(() => {});
+  }
 }
 
 // ============================================================
@@ -153,6 +262,25 @@ function setupIpcHandlers() {
 app.whenReady().then(async () => {
   setupIpcHandlers();
   createMenu();
+
+  // Try to auto-configure VPN from the database (LAN)
+  await autoConfigureVpnFromDb();
+
+  // Start VPN tunnel + daemon if enabled
+  const vpnCfg = store.get("vpn");
+  const dbCfg = store.get("db");
+
+  if (vpnCfg.enabled && vpnCfg.authKey && dbCfg.tailscaleHost) {
+    try {
+      await startTunnel(dbCfg.tailscaleHost, dbCfg.port || 3306, getVpnStatus().socksPort);
+    } catch {
+      // Port may be in use — non-fatal
+    }
+    // Start VPN in background (don't block app startup)
+    startVpn(vpnCfg.authKey).catch(() => {
+      // VPN start failed — LAN-only mode, non-fatal
+    });
+  }
 
   // Start Next.js with DB config as env vars
   const dbEnv = getDbEnvVars();
@@ -179,5 +307,7 @@ app.on("window-all-closed", () => {
 });
 
 app.on("before-quit", () => {
+  stopVpn();
+  stopTunnel();
   stopNextServer();
 });

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { ACHAT_VENTES_COMPARATIF } from "@/lib/queries";
+import { cached, TTL } from "@/lib/cache";
 
 interface VenteRow {
   GENRE: string | null;
@@ -76,27 +77,33 @@ export async function GET(
     const fromN1 = `${yearN1}-01-01`;
     const toN1 = `${yearN1}-${month}-${day}`;
 
-    const [rowsN, rowsN1] = await Promise.all([
-      query<VenteRow>(ACHAT_VENTES_COMPARATIF, [fromN, toN, fromN, toN, marque]),
-      query<VenteRow>(ACHAT_VENTES_COMPARATIF, [fromN1, toN1, fromN1, toN1, marque]),
-    ]);
+    const cacheKey = `marque-perf:${marque}:${toN}`;
 
-    const n = buildPeriodData(rowsN);
-    const n1 = buildPeriodData(rowsN1);
+    const result = await cached(cacheKey, async () => {
+      const [rowsN, rowsN1] = await Promise.all([
+        query<VenteRow>(ACHAT_VENTES_COMPARATIF, [fromN, toN, marque]),
+        query<VenteRow>(ACHAT_VENTES_COMPARATIF, [fromN1, toN1, marque]),
+      ]);
 
-    const evol = (a: number, b: number) => (b !== 0 ? ((a - b) / Math.abs(b)) * 100 : 0);
+      const n = buildPeriodData(rowsN);
+      const n1 = buildPeriodData(rowsN1);
 
-    return NextResponse.json({
-      anneeN: yearN,
-      anneeN1: yearN1,
-      n,
-      n1,
-      evolution: {
-        caTtc: evol(n.total.caTtc, n1.total.caTtc),
-        qte: evol(n.total.qte, n1.total.qte),
-        prixMoyen: evol(n.total.prixMoyen, n1.total.prixMoyen),
-      },
-    });
+      const evol = (a: number, b: number) => (b !== 0 ? ((a - b) / Math.abs(b)) * 100 : 0);
+
+      return {
+        anneeN: yearN,
+        anneeN1: yearN1,
+        n,
+        n1,
+        evolution: {
+          caTtc: evol(n.total.caTtc, n1.total.caTtc),
+          qte: evol(n.total.qte, n1.total.qte),
+          prixMoyen: evol(n.total.prixMoyen, n1.total.prixMoyen),
+        },
+      };
+    }, TTL.DEFAULT);
+
+    return NextResponse.json(result);
   } catch (error) {
     console.error("Error fetching brand performance:", error);
     return NextResponse.json(

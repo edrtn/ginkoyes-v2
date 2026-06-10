@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { queryFirst } from "@/lib/db";
 import { ACHAT_RECAP_COMMANDE } from "@/lib/queries";
+import { cached, TTL } from "@/lib/cache";
 
 export async function GET(request: NextRequest) {
   try {
@@ -15,13 +16,17 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    const m = marque.toUpperCase();
+    const cacheKey = `achat-recap:${collectionId}:${m}`;
+
+    const result = await cached(cacheKey, async () => {
     const row = await queryFirst(ACHAT_RECAP_COMMANDE, [
       Number(collectionId),
-      marque.toUpperCase(),
+      m,
     ]);
 
     if (!row) {
-      return NextResponse.json({
+      return {
         nbModeles: 0,
         qteTotale: 0,
         montantAchatBrut: 0,
@@ -32,7 +37,7 @@ export async function GET(request: NextRequest) {
         remise3: 0,
         coeff: 0,
         marge: 0,
-      });
+      };
     }
 
     const r = row as Record<string, unknown>;
@@ -57,7 +62,7 @@ export async function GET(request: NextRequest) {
     const remise2 = base2 > 0 ? (remise2Montant / base2) * 100 : 0;
     const remise3 = base3 > 0 ? (remise3Montant / base3) * 100 : 0;
 
-    return NextResponse.json({
+    return {
       nbModeles: Number(r.NB_MODELES) || 0,
       qteTotale: Number(r.QTE_TOTALE) || 0,
       montantAchatBrut,
@@ -68,7 +73,10 @@ export async function GET(request: NextRequest) {
       remise3,
       coeff,
       marge,
-    });
+    };
+    }, TTL.DEFAULT);
+
+    return NextResponse.json(result);
   } catch (error) {
     console.error("Error fetching recap:", error);
     return NextResponse.json(

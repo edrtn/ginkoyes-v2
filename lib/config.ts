@@ -9,6 +9,8 @@ export interface DbConfig {
   lanHost: string;
   tailscaleHost: string;
   port: number;
+  /** Local tunnel port for VPN connections (0 = no tunnel) */
+  tunnelPort: number;
   user: string;
   password: string;
   database: string;
@@ -18,6 +20,7 @@ const DEFAULT_CONFIG: DbConfig = {
   lanHost: "192.168.1.100",
   tailscaleHost: "",
   port: 3306,
+  tunnelPort: 0,
   user: "ginkoyes",
   password: "ginkoyes",
   database: "ginkoyes",
@@ -33,6 +36,7 @@ function getEnvConfig(): DbConfig {
     lanHost: process.env.DB_LAN_HOST || DEFAULT_CONFIG.lanHost,
     tailscaleHost: process.env.DB_TAILSCALE_HOST || DEFAULT_CONFIG.tailscaleHost,
     port: parseInt(process.env.DB_PORT || String(DEFAULT_CONFIG.port), 10),
+    tunnelPort: parseInt(process.env.DB_TUNNEL_PORT || "0", 10),
     user: process.env.DB_USER || DEFAULT_CONFIG.user,
     password: process.env.DB_PASSWORD || DEFAULT_CONFIG.password,
     database: process.env.DB_NAME || DEFAULT_CONFIG.database,
