@@ -1,0 +1,56 @@
+appId: com.ginkoyes.app
+productName: Ginkoyes
+directories:
+  output: release
+  buildResources: build
+
+# Auto-update : publier les releases sur GitHub
+publish:
+  provider: github
+  owner: edwardrenton
+  repo: ginkoyes-v2
+
+files:
+  - dist-electron/**/*
+  - "!node_modules"
+
+extraResources:
+  - from: .next/standalone
+    to: standalone
+    filter:
+      - "**/*"
+  - from: .next/static
+    to: standalone/.next/static
+    filter:
+      - "**/*"
+  - from: public
+    to: standalone/public
+    filter:
+      - "**/*"
+
+asar: true
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: build/icon.ico
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+
+mac:
+  target:
+    - target: dmg
+      arch:
+        - arm64
+  icon: build/icon.icns
+  category: public.app-category.business
+
+linux:
+  target:
+    - target: AppImage
+      arch:
+        - x64

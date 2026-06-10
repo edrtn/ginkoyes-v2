@@ -1,0 +1,611 @@
+// ============================
+// Recherche articles
+// ============================
+
+export const SEARCH_ARTICLES = `
+SELECT
+  a.ART_ID, a.ART_NOM, a.ART_REFMRK,
+  r.ARF_CHRONO,
+  mrk.MRK_NOM AS MARQUE,
+  ray.RAY_NOM AS RAYON,
+  fam.FAM_NOM AS FAMILLE,
+  gen.GRE_NOM AS GENRE
+FROM ARTARTICLE a
+JOIN ARTREFERENCE r ON r.ARF_ARTID = a.ART_ID
+LEFT JOIN ARTMARQUE mrk ON mrk.MRK_ID = a.ART_MRKID
+LEFT JOIN ARTGENRE gen ON gen.GRE_ID = a.ART_GREID
+LEFT JOIN NKLSSFAMILLE ssf ON ssf.SSF_ID = a.ART_SSFID
+LEFT JOIN NKLFAMILLE fam ON fam.FAM_ID = ssf.SSF_FAMID
+LEFT JOIN NKLRAYON ray ON ray.RAY_ID = fam.FAM_RAYID
+`;
+
+// Builds dynamic WHERE clause for article search
+export function buildArticleSearchWhere(params: {
+  q?: string;
+  marque?: string;
+  rayon?: string;
+  famille?: string;
+  collection?: string;
+}): { where: string; values: unknown[] } {
+  const conditions: string[] = [];
+  const values: unknown[] = [];
+
+  if (params.q) {
+    conditions.push(
+      `(UPPER(a.ART_NOM) LIKE ? OR UPPER(a.ART_REFMRK) LIKE ? OR UPPER(r.ARF_CHRONO) LIKE ? OR EXISTS (SELECT 1 FROM ARTCODEBARRE cb WHERE cb.CBI_ARFID = r.ARF_ID AND UPPER(cb.CBI_CB) LIKE ?))`
+    );
+    const term = `%${params.q.toUpperCase()}%`;
+    values.push(term, term, term, term);
+  }
+
+  if (params.marque) {
+    conditions.push(`UPPER(mrk.MRK_NOM) = ?`);
+    values.push(params.marque.toUpperCase());
+  }
+
+  if (params.rayon) {
+    conditions.push(`UPPER(ray.RAY_NOM) = ?`);
+    values.push(params.rayon.toUpperCase());
+  }
+
+  if (params.famille) {
+    conditions.push(`UPPER(fam.FAM_NOM) = ?`);
+    values.push(params.famille.toUpperCase());
+  }
+
+  if (params.collection) {
+    // Need join to ARTCOLART + ARTCOLLECTION
+    conditions.push(
+      `EXISTS (SELECT 1 FROM ARTCOLART ca2 JOIN ARTCOLLECTION col2 ON col2.COL_ID = ca2.CAR_COLID WHERE ca2.CAR_ARTID = a.ART_ID AND UPPER(col2.COL_NOM) LIKE ?)`
+    );
+    values.push(`%${params.collection.toUpperCase()}%`);
+  }
+
+  const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+  return { where, values };
+}
+
+// ============================
+// Fiche article détaillée
+// ============================
+
+export const ARTICLE_DETAIL = `
+SELECT a.ART_ID, a.ART_NOM, a.ART_REFMRK, a.ART_CODE, a.ART_CODEFOURN,
+       r.ARF_CHRONO AS REF_GINKOIA, r.ARF_ID,
+       mrk.MRK_NOM AS MARQUE,
+       ray.RAY_NOM AS RAYON,
+       fam.FAM_NOM AS FAMILLE,
+       ssf.SSF_NOM AS SOUS_FAMILLE,
+       gen.GRE_NOM AS GENRE,
+       cla.CLA_NOM AS CLASSEMENT
+FROM ARTARTICLE a
+JOIN ARTREFERENCE r ON r.ARF_ARTID = a.ART_ID
+LEFT JOIN ARTMARQUE mrk ON mrk.MRK_ID = a.ART_MRKID
+LEFT JOIN ARTGENRE gen ON gen.GRE_ID = a.ART_GREID
+LEFT JOIN NKLSSFAMILLE ssf ON ssf.SSF_ID = a.ART_SSFID
+LEFT JOIN NKLFAMILLE fam ON fam.FAM_ID = ssf.SSF_FAMID
+LEFT JOIN NKLRAYON ray ON ray.RAY_ID = fam.FAM_RAYID
+LEFT JOIN ARTCLAITEM ci ON ci.CIT_ICLID = r.ARF_ICLID1
+LEFT JOIN ARTCLASSEMENT cla ON cla.CLA_ID = ci.CIT_CLAID
+WHERE a.ART_ID = ?
+`;
+
+export const ARTICLE_COLLECTIONS = `
+SELECT col.COL_NOM AS SAISON
+FROM ARTCOLART ca
+JOIN ARTCOLLECTION col ON col.COL_ID = ca.CAR_COLID
+WHERE ca.CAR_ARTID = ?
+`;
+
+export const ARTICLE_BARCODES = `
+SELECT cb.CBI_CB
+FROM ARTCODEBARRE cb
+JOIN ARTREFERENCE r ON r.ARF_ID = cb.CBI_ARFID
+WHERE r.ARF_ARTID = ?
+`;
+
+// ============================
+// Stock
+// ============================
+
+export const ARTICLE_STOCK = `
+SELECT s.STC_QTE AS QTE, s.STC_PUMP AS PRIX_ACHAT,
+       t.TGF_NOM AS TAILLE, cou.COU_NOM AS COULEUR,
+       cou.COU_CODE AS COULEUR_CODE, cou.COU_ARTID AS COULEUR_ARTID
+FROM AGRSTOCKCOUR s
+LEFT JOIN PLXTAILLESGF t ON t.TGF_ID = s.STC_TGFID
+LEFT JOIN PLXCOULEUR cou ON cou.COU_ID = s.STC_COUID
+WHERE s.STC_ARTID = ?
+ORDER BY cou.COU_NOM, t.TGF_NOM
+`;
+
+export const STOCK_GLOBAL = `
+SELECT
+  a.ART_ID, a.ART_NOM, a.ART_REFMRK,
+  mrk.MRK_NOM AS MARQUE,
+  ray.RAY_NOM AS RAYON,
+  SUM(s.STC_QTE) AS STOCK_TOTAL,
+  SUM(s.STC_QTE * s.STC_PUMP) AS VALORISATION
+FROM AGRSTOCKCOUR s
+JOIN ARTARTICLE a ON a.ART_ID = s.STC_ARTID
+LEFT JOIN ARTMARQUE mrk ON mrk.MRK_ID = a.ART_MRKID
+LEFT JOIN NKLSSFAMILLE ssf ON ssf.SSF_ID = a.ART_SSFID
+LEFT JOIN NKLFAMILLE fam ON fam.FAM_ID = ssf.SSF_FAMID
+LEFT JOIN NKLRAYON ray ON ray.RAY_ID = fam.FAM_RAYID
+`;
+
+export function buildStockWhere(params: {
+  marque?: string;
+  rayon?: string;
+  collection?: string;
+  q?: string;
+}): { where: string; values: unknown[] } {
+  const conditions: string[] = ["s.STC_QTE <> 0"];
+  const values: unknown[] = [];
+
+  if (params.q) {
+    conditions.push(`(UPPER(a.ART_NOM) LIKE ? OR UPPER(a.ART_REFMRK) LIKE ?)`);
+    const term = `%${params.q.toUpperCase()}%`;
+    values.push(term, term);
+  }
+
+  if (params.marque) {
+    conditions.push(`UPPER(mrk.MRK_NOM) = ?`);
+    values.push(params.marque.toUpperCase());
+  }
+
+  if (params.rayon) {
+    conditions.push(`UPPER(ray.RAY_NOM) = ?`);
+    values.push(params.rayon.toUpperCase());
+  }
+
+  if (params.collection) {
+    conditions.push(
+      `EXISTS (SELECT 1 FROM ARTCOLART ca2 JOIN ARTCOLLECTION col2 ON col2.COL_ID = ca2.CAR_COLID WHERE ca2.CAR_ARTID = a.ART_ID AND UPPER(col2.COL_NOM) LIKE ?)`
+    );
+    values.push(`%${params.collection.toUpperCase()}%`);
+  }
+
+  const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+  return { where, values };
+}
+
+// ============================
+// Ventes
+// ============================
+
+export const ARTICLE_VENTES = `
+SELECT v.SOURCE, v.DATE_VENTE, v.NUMERO,
+       v.NOM, v.QTE, v.PXBRUT, v.REMISE, v.PXNET,
+       IF(tg.TGF_CORRES IS NOT NULL AND tg.TGF_CORRES <> '', tg.TGF_CORRES, tg.TGF_NOM) AS TAILLE,
+       cou.COU_NOM AS COULEUR
+FROM (
+  SELECT 'CAISSE' AS SOURCE, t.TKE_DATE AS DATE_VENTE, t.TKE_NUMERO AS NUMERO,
+         l.TKL_NOM AS NOM, l.TKL_QTE AS QTE, l.TKL_PXBRUT AS PXBRUT,
+         l.TKL_REMISE AS REMISE, l.TKL_PXNET AS PXNET,
+         l.TKL_TGFID AS TGFID, l.TKL_COUID AS COUID
+  FROM CSHTICKETL l
+  JOIN CSHTICKET t ON t.TKE_ID = l.TKL_TKEID
+  WHERE l.TKL_ARTID = ?
+  UNION ALL
+  SELECT IF(bl.BLE_WEB = 1, 'WEB', 'BL') AS SOURCE,
+         bl.BLE_DATE AS DATE_VENTE, bl.BLE_NUMERO AS NUMERO,
+         NULL AS NOM, l.BLL_QTE AS QTE, l.BLL_PXBRUT AS PXBRUT,
+         IF(l.BLL_PXBRUT > 0, ROUND((1.0 - 1.0 * l.BLL_PXNET / l.BLL_PXBRUT) * 100, 2), 0) AS REMISE,
+         l.BLL_PXNET AS PXNET,
+         l.BLL_TGFID AS TGFID, l.BLL_COUID AS COUID
+  FROM NEGBLL l
+  JOIN NEGBL bl ON bl.BLE_ID = l.BLL_BLEID
+  WHERE l.BLL_ARTID IN (
+    SELECT a2.ART_ID FROM ARTARTICLE a2
+    WHERE a2.ART_REFMRK LIKE CONCAT(?, '%')
+  )
+) v
+LEFT JOIN PLXTAILLESGF tg ON tg.TGF_ID = v.TGFID
+LEFT JOIN PLXCOULEUR cou ON cou.COU_ID = v.COUID
+ORDER BY v.DATE_VENTE DESC
+`;
+
+// ============================
+// Réceptions
+// ============================
+
+export const ARTICLE_RECEPTIONS = `
+SELECT br.BRE_DATE, br.BRE_NUMERO, br.BRE_NUMFOURN,
+       f.FOU_NOM,
+       l.BRL_QTE, l.BRL_PXACHAT, l.BRL_PXVENTE,
+       tg.TGF_NOM AS TAILLE, cou.COU_NOM AS COULEUR
+FROM RECBRL l
+JOIN RECBR br ON br.BRE_ID = l.BRL_BREID
+LEFT JOIN ARTFOURN f ON f.FOU_ID = br.BRE_FOUID
+LEFT JOIN PLXTAILLESGF tg ON tg.TGF_ID = l.BRL_TGFID
+LEFT JOIN PLXCOULEUR cou ON cou.COU_ID = l.BRL_COUID
+WHERE l.BRL_ARTID = ?
+ORDER BY br.BRE_DATE DESC, tg.TGF_NOM
+`;
+
+// ============================
+// Dashboard stats (with date filters for performance)
+// ============================
+
+export const DASHBOARD_CA_TOTAL = `
+SELECT SUM(TKE_TOTALTTC) AS CA_TOTAL, COUNT(*) AS NB_TICKETS
+FROM CSHTICKET
+WHERE TKE_DATE >= ? AND TKE_DATE < ?
+`;
+
+export const DASHBOARD_TOP_ARTICLES = `
+SELECT
+  a.ART_ID, a.ART_NOM, a.ART_REFMRK,
+  mrk.MRK_NOM AS MARQUE,
+  ray.RAY_NOM AS RAYON,
+  SUM(l.TKL_QTE) AS QTE_VENDUE,
+  SUM(l.TKL_PXNET) AS CA_ARTICLE
+FROM CSHTICKETL l
+JOIN CSHTICKET t ON t.TKE_ID = l.TKL_TKEID
+JOIN ARTARTICLE a ON a.ART_ID = l.TKL_ARTID
+LEFT JOIN ARTMARQUE mrk ON mrk.MRK_ID = a.ART_MRKID
+LEFT JOIN NKLSSFAMILLE ssf ON ssf.SSF_ID = a.ART_SSFID
+LEFT JOIN NKLFAMILLE fam ON fam.FAM_ID = ssf.SSF_FAMID
+LEFT JOIN NKLRAYON ray ON ray.RAY_ID = fam.FAM_RAYID
+WHERE t.TKE_DATE >= ? AND t.TKE_DATE < ?
+  AND a.ART_ID > 0
+GROUP BY a.ART_ID, a.ART_NOM, a.ART_REFMRK, mrk.MRK_NOM, ray.RAY_NOM
+ORDER BY CA_ARTICLE DESC
+LIMIT 10
+`;
+
+export const DASHBOARD_CA_PAR_RAYON = `
+SELECT ray.RAY_NOM AS RAYON, SUM(l.TKL_PXNET) AS CA
+FROM CSHTICKETL l
+JOIN CSHTICKET t ON t.TKE_ID = l.TKL_TKEID
+JOIN ARTARTICLE a ON a.ART_ID = l.TKL_ARTID
+LEFT JOIN NKLSSFAMILLE ssf ON ssf.SSF_ID = a.ART_SSFID
+LEFT JOIN NKLFAMILLE fam ON fam.FAM_ID = ssf.SSF_FAMID
+LEFT JOIN NKLRAYON ray ON ray.RAY_ID = fam.FAM_RAYID
+WHERE t.TKE_DATE >= ? AND t.TKE_DATE < ?
+  AND ray.RAY_NOM IS NOT NULL AND TRIM(ray.RAY_NOM) <> ''
+GROUP BY ray.RAY_NOM
+ORDER BY CA DESC
+`;
+
+export const DASHBOARD_CA_PAR_MARQUE = `
+SELECT mrk.MRK_NOM AS MARQUE, SUM(l.TKL_PXNET) AS CA
+FROM CSHTICKETL l
+JOIN CSHTICKET t ON t.TKE_ID = l.TKL_TKEID
+JOIN ARTARTICLE a ON a.ART_ID = l.TKL_ARTID
+LEFT JOIN ARTMARQUE mrk ON mrk.MRK_ID = a.ART_MRKID
+WHERE t.TKE_DATE >= ? AND t.TKE_DATE < ?
+  AND mrk.MRK_NOM IS NOT NULL AND TRIM(mrk.MRK_NOM) <> ''
+GROUP BY mrk.MRK_NOM
+ORDER BY CA DESC
+LIMIT 15
+`;
+
+export const DASHBOARD_CA_MENSUEL = `
+SELECT YEAR(t.TKE_DATE) AS ANNEE,
+       MONTH(t.TKE_DATE) AS MOIS,
+       SUM(l.TKL_PXNET) AS CA
+FROM CSHTICKETL l
+JOIN CSHTICKET t ON t.TKE_ID = l.TKL_TKEID
+WHERE t.TKE_DATE >= ? AND t.TKE_DATE < ?
+GROUP BY YEAR(t.TKE_DATE), MONTH(t.TKE_DATE)
+ORDER BY ANNEE, MOIS
+`;
+
+// ============================
+// Stats annuelles (CA, panier moyen, indice de vente)
+// ============================
+
+export const STATS_ANNUELLES = `
+SELECT
+  YEAR(t.TKE_DATE) AS ANNEE,
+  SUM(t.TKE_TOTALTTC) AS CA,
+  COUNT(t.TKE_ID) AS NB_TICKETS,
+  SUM(l.NB_ARTICLES) AS NB_ARTICLES
+FROM CSHTICKET t
+LEFT JOIN (
+  SELECT TKL_TKEID, SUM(TKL_QTE) AS NB_ARTICLES
+  FROM CSHTICKETL
+  GROUP BY TKL_TKEID
+) l ON l.TKL_TKEID = t.TKE_ID
+WHERE t.TKE_DATE IS NOT NULL
+GROUP BY YEAR(t.TKE_DATE)
+ORDER BY ANNEE
+`;
+
+// ============================
+// Filtres (pour les dropdowns)
+// ============================
+
+export const LIST_MARQUES = `
+SELECT DISTINCT mrk.MRK_NOM AS MARQUE
+FROM ARTMARQUE mrk
+WHERE mrk.MRK_NOM IS NOT NULL
+ORDER BY mrk.MRK_NOM
+`;
+
+export const LIST_RAYONS = `
+SELECT DISTINCT ray.RAY_NOM AS RAYON
+FROM NKLRAYON ray
+WHERE ray.RAY_NOM IS NOT NULL
+ORDER BY ray.RAY_NOM
+`;
+
+export const LIST_FAMILLES = `
+SELECT DISTINCT fam.FAM_NOM AS FAMILLE
+FROM NKLFAMILLE fam
+WHERE fam.FAM_NOM IS NOT NULL
+ORDER BY fam.FAM_NOM
+`;
+
+// ============================
+// Collections (pour dropdown Achat)
+// ============================
+
+export const LIST_COLLECTIONS = `
+SELECT COL_ID, COL_NOM FROM ARTCOLLECTION
+WHERE COL_NOM IS NOT NULL AND TRIM(COL_NOM) <> ''
+ORDER BY COL_NOM DESC
+`;
+
+export const INSERT_COLLECTION = `
+INSERT INTO ARTCOLLECTION (COL_ID, COL_NOM)
+VALUES ((SELECT COALESCE(MAX(c.COL_ID),0)+1 FROM ARTCOLLECTION c), ?)
+`;
+
+// ============================
+// Achat — Recap commande N-1
+// ============================
+
+export const ACHAT_RECAP_COMMANDE = `
+SELECT
+  COUNT(DISTINCT l.CDL_ARTID) AS NB_MODELES,
+  SUM(l.CDL_QTE) AS QTE_TOTALE,
+  SUM(l.CDL_QTE * l.CDL_PXACHAT) AS MONTANT_ACHAT_BRUT,
+  SUM(l.CDL_QTE * l.CDL_PXACHAT
+    * (1 - COALESCE(l.CDL_REMISE1,0)/100.0)
+    * (1 - COALESCE(l.CDL_REMISE2,0)/100.0)
+    * (1 - COALESCE(l.CDL_REMISE3,0)/100.0)
+  ) AS MONTANT_ACHAT_NET,
+  SUM(l.CDL_QTE * l.CDL_PXVENTE) AS MONTANT_VENTE,
+  SUM(l.CDL_QTE * l.CDL_PXACHAT * COALESCE(l.CDL_REMISE1,0)/100.0) AS REMISE1_TOTAL,
+  SUM(l.CDL_QTE * l.CDL_PXACHAT
+    * (1 - COALESCE(l.CDL_REMISE1,0)/100.0)
+    * COALESCE(l.CDL_REMISE2,0)/100.0
+  ) AS REMISE2_TOTAL,
+  SUM(l.CDL_QTE * l.CDL_PXACHAT
+    * (1 - COALESCE(l.CDL_REMISE1,0)/100.0)
+    * (1 - COALESCE(l.CDL_REMISE2,0)/100.0)
+    * COALESCE(l.CDL_REMISE3,0)/100.0
+  ) AS REMISE3_TOTAL
+FROM COMBCDEL l
+JOIN COMBCDE cde ON cde.CDE_ID = l.CDL_CDEID
+JOIN ARTARTICLE a ON a.ART_ID = l.CDL_ARTID
+JOIN ARTMARQUE mrk ON mrk.MRK_ID = a.ART_MRKID
+WHERE cde.CDE_COLID = ? AND UPPER(mrk.MRK_NOM) = ?
+`;
+
+// ============================
+// Achat — Comparatif ventes N-1 vs N-2
+// ============================
+
+export const ACHAT_VENTES_COMPARATIF = `
+SELECT
+  gen.GRE_NOM AS GENRE,
+  SUM(v.PXNET) AS CA_TTC,
+  SUM(v.PXNNHT) AS CA_HT,
+  SUM(v.QTE) AS QTE,
+  SUM(v.QTE * COALESCE(s.STC_PUMP, 0)) AS COUT_TOTAL
+FROM (
+  SELECT l.TKL_ARTID AS ARTID, l.TKL_TGFID AS TGFID, l.TKL_COUID AS COUID,
+    l.TKL_QTE AS QTE, l.TKL_PXNET AS PXNET, l.TKL_PXNNHT AS PXNNHT
+  FROM CSHTICKETL l
+  JOIN CSHTICKET t ON t.TKE_ID = l.TKL_TKEID
+  WHERE t.TKE_DATE >= ? AND t.TKE_DATE < ?
+  UNION ALL
+  SELECT l.BLL_ARTID, l.BLL_TGFID, l.BLL_COUID,
+    l.BLL_QTE, l.BLL_PXNET, l.BLL_PXNN
+  FROM NEGBLL l
+  JOIN NEGBL bl ON bl.BLE_ID = l.BLL_BLEID
+  WHERE bl.BLE_DATE >= ? AND bl.BLE_DATE < ?
+) v
+JOIN ARTARTICLE a ON a.ART_ID = v.ARTID
+JOIN ARTMARQUE mrk ON mrk.MRK_ID = a.ART_MRKID
+LEFT JOIN ARTGENRE gen ON gen.GRE_ID = a.ART_GREID
+LEFT JOIN AGRSTOCKCOUR s ON s.STC_ARTID = a.ART_ID
+  AND s.STC_TGFID = v.TGFID AND s.STC_COUID = v.COUID
+WHERE UPPER(mrk.MRK_NOM) = ?
+GROUP BY gen.GRE_NOM
+`;
+
+// ============================
+// Achat — Taux de sortie collection N-1
+// ============================
+
+export const ACHAT_TAUX_SORTIE = `
+SELECT
+  a.ART_ID, a.ART_NOM, a.ART_REFMRK,
+  gen.GRE_NOM AS GENRE,
+  ray.RAY_NOM AS RAYON, fam.FAM_NOM AS FAMILLE, ssf.SSF_NOM AS SOUS_FAMILLE,
+  cou.COU_NOM AS COULEUR,
+  cmd.QTE_COMMANDEE,
+  COALESCE(rec.QTE_RECUE, 0) AS QTE_RECUE,
+  COALESCE(ven.QTE_VENDUE, 0) AS QTE_VENDUE,
+  cmd.MONTANT_ACHAT_NET, cmd.PX_VENTE_UNITAIRE
+FROM (
+  SELECT l.CDL_ARTID AS ART_ID, l.CDL_COUID AS COU_ID,
+    SUM(l.CDL_QTE) AS QTE_COMMANDEE,
+    SUM(l.CDL_QTE * l.CDL_PXACHAT
+      * (1 - COALESCE(l.CDL_REMISE1,0)/100.0)
+      * (1 - COALESCE(l.CDL_REMISE2,0)/100.0)
+      * (1 - COALESCE(l.CDL_REMISE3,0)/100.0)) AS MONTANT_ACHAT_NET,
+    MAX(l.CDL_PXVENTE) AS PX_VENTE_UNITAIRE
+  FROM COMBCDEL l
+  JOIN COMBCDE cde ON cde.CDE_ID = l.CDL_CDEID
+  WHERE cde.CDE_COLID = ?
+  GROUP BY l.CDL_ARTID, l.CDL_COUID
+) cmd
+JOIN ARTARTICLE a ON a.ART_ID = cmd.ART_ID
+JOIN ARTMARQUE mrk ON mrk.MRK_ID = a.ART_MRKID
+LEFT JOIN ARTGENRE gen ON gen.GRE_ID = a.ART_GREID
+LEFT JOIN NKLSSFAMILLE ssf ON ssf.SSF_ID = a.ART_SSFID
+LEFT JOIN NKLFAMILLE fam ON fam.FAM_ID = ssf.SSF_FAMID
+LEFT JOIN NKLRAYON ray ON ray.RAY_ID = fam.FAM_RAYID
+LEFT JOIN PLXCOULEUR cou ON cou.COU_ID = cmd.COU_ID
+LEFT JOIN (
+  SELECT l.BRL_ARTID AS ART_ID, l.BRL_COUID AS COU_ID, SUM(l.BRL_QTE) AS QTE_RECUE
+  FROM RECBRL l
+  JOIN RECBR br ON br.BRE_ID = l.BRL_BREID
+  WHERE br.BRE_COLID = ?
+  GROUP BY l.BRL_ARTID, l.BRL_COUID
+) rec ON rec.ART_ID = a.ART_ID AND rec.COU_ID = cmd.COU_ID
+LEFT JOIN (
+  SELECT ARTID, COUID, SUM(QTE) AS QTE_VENDUE FROM (
+    SELECT TKL_ARTID AS ARTID, TKL_COUID AS COUID, TKL_QTE AS QTE FROM CSHTICKETL
+    UNION ALL
+    SELECT BLL_ARTID, BLL_COUID, BLL_QTE FROM NEGBLL
+  ) v GROUP BY ARTID, COUID
+) ven ON ven.ARTID = a.ART_ID AND ven.COUID = cmd.COU_ID
+WHERE UPPER(mrk.MRK_NOM) = ?
+ORDER BY ray.RAY_NOM, fam.FAM_NOM, a.ART_REFMRK, cou.COU_NOM
+`;
+
+// ============================
+// Achat — Détail des ventes individuelles
+// ============================
+
+export const ACHAT_VENTES_DETAIL = `
+  SELECT
+    a.ART_ID,
+    v.SOURCE, v.DATE_VENTE, v.NUMERO,
+    a.ART_NOM, a.ART_REFMRK,
+    gen.GRE_NOM AS GENRE,
+    cou.COU_NOM AS COULEUR,
+    tgf.TGF_NOM AS TAILLE,
+    ray.RAY_NOM AS RAYON, fam.FAM_NOM AS FAMILLE,
+    v.QTE, v.PX_BRUT, v.PX_NET_TTC, v.PX_NET_HT
+  FROM (
+    SELECT 'CAISSE' AS SOURCE, t.TKE_DATE AS DATE_VENTE, t.TKE_NUMERO AS NUMERO,
+      l.TKL_ARTID AS ARTID, l.TKL_TGFID AS TGFID, l.TKL_COUID AS COUID,
+      l.TKL_QTE AS QTE, l.TKL_PXBRUT AS PX_BRUT, l.TKL_PXNET AS PX_NET_TTC, l.TKL_PXNNHT AS PX_NET_HT
+    FROM CSHTICKETL l
+    JOIN CSHTICKET t ON t.TKE_ID = l.TKL_TKEID
+    WHERE t.TKE_DATE >= ? AND t.TKE_DATE < ?
+    UNION ALL
+    SELECT 'BL/INTERNET' AS SOURCE, bl.BLE_DATE AS DATE_VENTE, bl.BLE_NUMERO AS NUMERO,
+      l.BLL_ARTID, l.BLL_TGFID, l.BLL_COUID,
+      l.BLL_QTE, l.BLL_PXBRUT, l.BLL_PXNET, l.BLL_PXNN
+    FROM NEGBLL l
+    JOIN NEGBL bl ON bl.BLE_ID = l.BLL_BLEID
+    WHERE bl.BLE_DATE >= ? AND bl.BLE_DATE < ?
+  ) v
+  JOIN ARTARTICLE a ON a.ART_ID = v.ARTID
+  JOIN ARTMARQUE mrk ON mrk.MRK_ID = a.ART_MRKID
+  LEFT JOIN ARTGENRE gen ON gen.GRE_ID = a.ART_GREID
+  LEFT JOIN PLXCOULEUR cou ON cou.COU_ID = v.COUID
+  LEFT JOIN PLXTAILLESGF tgf ON tgf.TGF_ID = v.TGFID
+  LEFT JOIN NKLSSFAMILLE ssf ON ssf.SSF_ID = a.ART_SSFID
+  LEFT JOIN NKLFAMILLE fam ON fam.FAM_ID = ssf.SSF_FAMID
+  LEFT JOIN NKLRAYON ray ON ray.RAY_ID = fam.FAM_RAYID
+  WHERE UPPER(mrk.MRK_NOM) = ?
+  ORDER BY v.DATE_VENTE, a.ART_NOM, cou.COU_NOM
+`;
+
+// ============================
+// Page Marque
+// ============================
+
+export const BRAND_STATS = `
+SELECT
+  COUNT(DISTINCT a.ART_ID) AS NB_ARTICLES,
+  COALESCE(SUM(s.STC_QTE), 0) AS TOTAL_QTE,
+  COALESCE(SUM(s.STC_QTE * s.STC_PUMP), 0) AS TOTAL_VALOR
+FROM AGRSTOCKCOUR s
+JOIN ARTARTICLE a ON a.ART_ID = s.STC_ARTID
+LEFT JOIN ARTMARQUE mrk ON mrk.MRK_ID = a.ART_MRKID
+WHERE UPPER(mrk.MRK_NOM) = UPPER(?)
+  AND s.STC_QTE > 0
+`;
+
+export const BRAND_ARTICLES = `
+SELECT a.ART_ID, a.ART_NOM, a.ART_REFMRK, r.ARF_CHRONO AS REF_GINKOIA,
+       ray.RAY_NOM AS RAYON, fam.FAM_NOM AS FAMILLE, gen.GRE_NOM AS GENRE,
+       (SELECT MAX(col.COL_NOM) FROM ARTCOLART ca JOIN ARTCOLLECTION col ON col.COL_ID = ca.CAR_COLID WHERE ca.CAR_ARTID = a.ART_ID) AS SAISON,
+       COALESCE(SUM(s.STC_QTE), 0) AS STOCK
+FROM ARTARTICLE a
+LEFT JOIN ARTREFERENCE r ON r.ARF_ARTID = a.ART_ID
+LEFT JOIN ARTMARQUE mrk ON mrk.MRK_ID = a.ART_MRKID
+LEFT JOIN NKLSSFAMILLE ssf ON ssf.SSF_ID = a.ART_SSFID
+LEFT JOIN NKLFAMILLE fam ON fam.FAM_ID = ssf.SSF_FAMID
+LEFT JOIN NKLRAYON ray ON ray.RAY_ID = fam.FAM_RAYID
+LEFT JOIN ARTGENRE gen ON gen.GRE_ID = a.ART_GREID
+LEFT JOIN AGRSTOCKCOUR s ON s.STC_ARTID = a.ART_ID
+WHERE UPPER(mrk.MRK_NOM) = UPPER(?)
+GROUP BY a.ART_ID, a.ART_NOM, a.ART_REFMRK, r.ARF_CHRONO,
+         ray.RAY_NOM, fam.FAM_NOM, gen.GRE_NOM
+HAVING COALESCE(SUM(s.STC_QTE), 0) > 0
+ORDER BY a.ART_NOM
+`;
+
+export const BRAND_VENTES = `
+SELECT v.SOURCE, v.DATE_VENTE, v.NUMERO,
+       a.ART_NOM, a.ART_ID,
+       v.QTE, v.PXBRUT, v.REMISE, v.PXNET,
+       IF(tg.TGF_CORRES IS NOT NULL AND tg.TGF_CORRES <> '', tg.TGF_CORRES, tg.TGF_NOM) AS TAILLE,
+       cou.COU_NOM AS COULEUR
+FROM (
+  SELECT 'CAISSE' AS SOURCE, t.TKE_DATE AS DATE_VENTE, t.TKE_NUMERO AS NUMERO,
+         l.TKL_ARTID AS ARTID,
+         l.TKL_QTE AS QTE, l.TKL_PXBRUT AS PXBRUT,
+         l.TKL_REMISE AS REMISE, l.TKL_PXNET AS PXNET,
+         l.TKL_TGFID AS TGFID, l.TKL_COUID AS COUID
+  FROM CSHTICKETL l
+  JOIN CSHTICKET t ON t.TKE_ID = l.TKL_TKEID
+  UNION ALL
+  SELECT IF(bl.BLE_WEB = 1, 'WEB', 'BL') AS SOURCE,
+         bl.BLE_DATE AS DATE_VENTE, bl.BLE_NUMERO AS NUMERO,
+         l.BLL_ARTID AS ARTID,
+         l.BLL_QTE AS QTE, l.BLL_PXBRUT AS PXBRUT,
+         IF(l.BLL_PXBRUT > 0, ROUND((1.0 - 1.0 * l.BLL_PXNET / l.BLL_PXBRUT) * 100, 2), 0) AS REMISE,
+         l.BLL_PXNET AS PXNET,
+         l.BLL_TGFID AS TGFID, l.BLL_COUID AS COUID
+  FROM NEGBLL l
+  JOIN NEGBL bl ON bl.BLE_ID = l.BLL_BLEID
+) v
+JOIN ARTARTICLE a ON a.ART_ID = v.ARTID
+JOIN ARTMARQUE mrk ON mrk.MRK_ID = a.ART_MRKID
+LEFT JOIN PLXTAILLESGF tg ON tg.TGF_ID = v.TGFID
+LEFT JOIN PLXCOULEUR cou ON cou.COU_ID = v.COUID
+WHERE UPPER(mrk.MRK_NOM) = UPPER(?)
+ORDER BY v.DATE_VENTE DESC
+LIMIT 200
+`;
+
+export const ACHAT_VENTES_COMPARATIF_PAR_SOURCE = `
+SELECT
+  v.SOURCE,
+  SUM(v.PXNET) AS CA_TTC,
+  SUM(v.PXNNHT) AS CA_HT,
+  SUM(v.QTE) AS QTE,
+  SUM(v.QTE * COALESCE(s.STC_PUMP, 0)) AS COUT_TOTAL
+FROM (
+  SELECT 'CAISSE' AS SOURCE, l.TKL_ARTID AS ARTID, l.TKL_TGFID AS TGFID, l.TKL_COUID AS COUID,
+    l.TKL_QTE AS QTE, l.TKL_PXNET AS PXNET, l.TKL_PXNNHT AS PXNNHT
+  FROM CSHTICKETL l
+  JOIN CSHTICKET t ON t.TKE_ID = l.TKL_TKEID
+  WHERE t.TKE_DATE >= ? AND t.TKE_DATE < ?
+  UNION ALL
+  SELECT 'BL/INTERNET' AS SOURCE, l.BLL_ARTID, l.BLL_TGFID, l.BLL_COUID,
+    l.BLL_QTE, l.BLL_PXNET, l.BLL_PXNN
+  FROM NEGBLL l
+  JOIN NEGBL bl ON bl.BLE_ID = l.BLL_BLEID
+  WHERE bl.BLE_DATE >= ? AND bl.BLE_DATE < ?
+) v
+JOIN ARTARTICLE a ON a.ART_ID = v.ARTID
+JOIN ARTMARQUE mrk ON mrk.MRK_ID = a.ART_MRKID
+LEFT JOIN AGRSTOCKCOUR s ON s.STC_ARTID = a.ART_ID
+  AND s.STC_TGFID = v.TGFID AND s.STC_COUID = v.COUID
+WHERE UPPER(mrk.MRK_NOM) = ?
+GROUP BY v.SOURCE
+`;

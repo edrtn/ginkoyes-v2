@@ -1,0 +1,20 @@
+{
+  "firebird": {
+    "gbkPath": "C:\\Ginkoia\\Backup\\SV.GBK",
+    "tempFdbPath": "C:\\Ginkoia\\Backup\\temp_sync.fdb",
+    "gbakPath": "C:\\Program Files\\Firebird\\Firebird_3_0\\gbak.exe",
+    "user": "SYSDBA",
+    "password": "ginkoia"
+  },
+  "mariadb": {
+    "host": "127.0.0.1",
+    "port": 3306,
+    "user": "ginkoyes",
+    "password": "ginkoyes",
+    "database": "ginkoyes"
+  },
+  "sync": {
+    "batchSize": 1000,
+    "logPath": "C:\\Ginkoia\\Logs\\sync.log"
+  }
+}
