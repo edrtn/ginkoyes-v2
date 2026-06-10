@@ -126,6 +126,7 @@ function Step-Prerequisites {
     } else {
         # Auto-detection
         $gbakPaths = @(
+            "C:\Program Files\Firebird\Firebird_4_0\gbak.exe",
             "C:\Program Files\Firebird\Firebird_3_0\gbak.exe",
             "C:\Program Files (x86)\Firebird\Firebird_3_0\gbak.exe",
             "C:\Ginkoia\Firebird\gbak.exe"
@@ -145,6 +146,25 @@ function Step-Prerequisites {
             if (-not (Test-Path $script:GbakPath)) {
                 Write-Err "Fichier introuvable : $($script:GbakPath)"
                 exit 1
+            }
+        }
+    }
+
+    # Configure Firebird Legacy Auth (requis par node-firebird)
+    $fbDir = Split-Path -Parent $script:GbakPath
+    $fbConf = Join-Path $fbDir "firebird.conf"
+    if (Test-Path $fbConf) {
+        $confContent = Get-Content $fbConf -Raw
+        if ($confContent -notmatch "(?m)^AuthServer\s*=.*Legacy_Auth") {
+            Add-Content -Path $fbConf -Value "`nAuthServer = Legacy_Auth, Srp, Win_Sspi"
+            Add-Content -Path $fbConf -Value "AuthClient = Legacy_Auth, Srp, Win_Sspi"
+            Add-Content -Path $fbConf -Value "WireCrypt = Disabled"
+            Write-Ok "Firebird configure pour Legacy Auth"
+            # Redemarrer le service Firebird pour appliquer
+            $fbServices = Get-Service -DisplayName "*Firebird*" -ErrorAction SilentlyContinue
+            foreach ($svc in $fbServices) {
+                Restart-Service $svc.Name -Force -ErrorAction SilentlyContinue
+                Start-Sleep -Seconds 2
             }
         }
     }
@@ -525,7 +545,7 @@ function Step-Service {
     }
     $configJson = $configObj | ConvertTo-Json -Depth 3
     $configPath = Join-Path $script:InstallDir "sync-config.json"
-    Set-Content -Path $configPath -Value $configJson -Encoding UTF8
+    [IO.File]::WriteAllText($configPath, $configJson)
     Write-Ok "sync-config.json genere"
 
     # Create package.json for the service
@@ -543,7 +563,7 @@ function Step-Service {
             "@types/node-schedule" = "^2.1.0"
         }
     } | ConvertTo-Json -Depth 3
-    Set-Content -Path (Join-Path $script:InstallDir "package.json") -Value $pkgJson -Encoding UTF8
+    [IO.File]::WriteAllText((Join-Path $script:InstallDir "package.json"), $pkgJson)
 
     # npm install
     Write-Info "Installation des dependances npm..."

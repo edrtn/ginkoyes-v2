@@ -1,5 +1,5 @@
 #define MyAppName "Ginkoyes Serveur"
-#define MyAppVersion "1.1.7"
+#define MyAppVersion "1.1.8"
 #define MyAppPublisher "Ginkoyes"
 #define MyAppURL "https://github.com/edrtn/ginkoyes-v2"
 
@@ -71,10 +71,11 @@ var
   I: Integer;
 begin
   Result := '';
-  SetLength(Paths, 3);
-  Paths[0] := 'C:\Program Files\Firebird\Firebird_3_0\gbak.exe';
-  Paths[1] := 'C:\Program Files (x86)\Firebird\Firebird_3_0\gbak.exe';
-  Paths[2] := 'C:\Ginkoia\Firebird\gbak.exe';
+  SetLength(Paths, 4);
+  Paths[0] := 'C:\Program Files\Firebird\Firebird_4_0\gbak.exe';
+  Paths[1] := 'C:\Program Files\Firebird\Firebird_3_0\gbak.exe';
+  Paths[2] := 'C:\Program Files (x86)\Firebird\Firebird_3_0\gbak.exe';
+  Paths[3] := 'C:\Ginkoia\Firebird\gbak.exe';
 
   for I := 0 to Length(Paths) - 1 do
   begin
