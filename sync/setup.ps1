@@ -1,5 +1,5 @@
 # ============================================================
-# Ginkoyes V2 — Installeur tout-en-un
+# Ginkoyes V2 - Installeur tout-en-un
 #
 # Installe : Node.js, MariaDB, Tailscale, BDD, service sync
 # Usage : powershell -ExecutionPolicy Bypass -File setup.ps1
@@ -30,7 +30,7 @@ $DbPassword = "ginkoyes"
 function Write-Banner {
     Write-Host ""
     Write-Host "========================================" -ForegroundColor Cyan
-    Write-Host "  Ginkoyes V2 — Installation" -ForegroundColor Cyan
+    Write-Host "  Ginkoyes V2 - Installation" -ForegroundColor Cyan
     Write-Host "========================================" -ForegroundColor Cyan
     Write-Host ""
 }
@@ -511,7 +511,7 @@ function Step-Service {
         exit 1
     }
 
-    # Compile TypeScript → dist/
+    # Compile TypeScript -> dist/
     Write-Info "Compilation TypeScript..."
     try {
         npx tsc -p tsconfig.service.json 2>&1 | Out-Null

@@ -1,5 +1,5 @@
 # ============================================================
-# Ginkoyes V2 — Desinstalleur
+# Ginkoyes V2 - Desinstalleur
 #
 # Arrete et supprime le service Windows GinkoyesSync.
 # Supprime le repertoire d'installation (apres confirmation).
@@ -16,7 +16,7 @@ $DefaultInstallDir = "C:\Ginkoyes"
 
 Write-Host ""
 Write-Host "========================================" -ForegroundColor Red
-Write-Host "  Ginkoyes V2 — Desinstallation" -ForegroundColor Red
+Write-Host "  Ginkoyes V2 - Desinstallation" -ForegroundColor Red
 Write-Host "========================================" -ForegroundColor Red
 Write-Host ""
 

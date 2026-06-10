@@ -1,7 +1,7 @@
 # ============================================================
-# Ginkoyes V2 — Installation tâche planifiée Windows
-# Exécute la synchronisation chaque nuit à 23h10
-# Usage : Exécuter en tant qu'administrateur
+# Ginkoyes V2 - Installation tache planifiee Windows
+# Execute la synchronisation chaque nuit a 23h10
+# Usage : Executer en tant qu'administrateur
 #   powershell -ExecutionPolicy Bypass -File install-task.ps1
 # ============================================================
 
@@ -15,32 +15,32 @@ $NodePath = "node"
 $TsxPath = "npx"
 $ScriptPath = Join-Path $SyncDir "sync.ts"
 
-# Commande à exécuter
+# Commande a executer
 $Action = New-ScheduledTaskAction `
     -Execute $TsxPath `
     -Argument "tsx `"$ScriptPath`"" `
     -WorkingDirectory $ProjectRoot
 
-# Déclencheur : chaque jour à 23h10
+# Declencheur : chaque jour a 23h10
 $Trigger = New-ScheduledTaskTrigger `
     -Daily `
     -At "23:10"
 
-# Paramètres : exécuter même si l'utilisateur n'est pas connecté
+# Parametres : executer meme si l'utilisateur n'est pas connecte
 $Settings = New-ScheduledTaskSettingsSet `
     -AllowStartIfOnBatteries `
     -DontStopIfGoingOnBatteries `
     -StartWhenAvailable `
     -ExecutionTimeLimit (New-TimeSpan -Minutes 30)
 
-# Vérifier si la tâche existe déjà
+# Verifier si la tache existe deja
 $ExistingTask = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
 if ($ExistingTask) {
     Write-Host "La tache '$TaskName' existe deja. Mise a jour..."
     Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
 }
 
-# Créer la tâche
+# Creer la tache
 Register-ScheduledTask `
     -TaskName $TaskName `
     -Description $Description `
