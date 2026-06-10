@@ -149,8 +149,18 @@ function restoreGbk(cfg: SyncConfig, log: (msg: string) => void): void {
   }
 
   log(`Restauration GBK : ${gbkPath} → ${tempFdbPath}`);
-  const cmd = `"${gbakPath}" -c -user ${user} -password ${password} "${gbkPath}" "${tempFdbPath}"`;
-  execSync(cmd, { stdio: "pipe", timeout: 600_000 });
+  const cmd = `"${gbakPath}" -c -FIX_FSS_METADATA WIN1252 -FIX_FSS_DATA WIN1252 -page_size 16384 -user ${user} -password ${password} "${gbkPath}" "${tempFdbPath}"`;
+  try {
+    execSync(cmd, { stdio: "pipe", timeout: 600_000 });
+  } catch (err: unknown) {
+    // gbak returns exit code 1 for warnings (table attribute not recognized, etc.)
+    // Check if the FDB file was actually created despite the warnings
+    if (!fs.existsSync(tempFdbPath)) {
+      throw err;
+    }
+    log("Restauration GBK terminée (avec warnings gbak)");
+    return;
+  }
   log("Restauration GBK terminée");
 }
 
@@ -191,7 +201,9 @@ async function syncTable(
   log(`  ${rows.length} lignes lues`);
 
   if (rows.length === 0) {
+    await pool.execute("SET FOREIGN_KEY_CHECKS=0");
     await pool.execute(`TRUNCATE TABLE ${table.name}`);
+    await pool.execute("SET FOREIGN_KEY_CHECKS=1");
     return 0;
   }
 
@@ -277,7 +289,7 @@ export async function runSync(cfg: SyncConfig): Promise<SyncResult> {
       password: cfg.firebird.password,
       lowercase_keys: false,
       role: undefined,
-      pageSize: 4096,
+      pageSize: 16384,
     };
 
     // Step 3 : Sync each table
