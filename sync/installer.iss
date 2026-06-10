@@ -1,5 +1,5 @@
 #define MyAppName "Ginkoyes Serveur"
-#define MyAppVersion "1.1.6"
+#define MyAppVersion "1.1.7"
 #define MyAppPublisher "Ginkoyes"
 #define MyAppURL "https://github.com/edrtn/ginkoyes-v2"
 

@@ -315,17 +315,18 @@ GRANT ALL PRIVILEGES ON {DBNAME}.* TO '{DBUSER}'@'%';
 FLUSH PRIVILEGES;
 '@
     $setupSql = $setupSql -replace '\{DBNAME\}', $DbName -replace '\{DBUSER\}', $DbUser -replace '\{DBPASS\}', $DbPassword
-    $setupSql | & $mysqlCmd -u root -proot 2>$null
+    try { $setupSql | & $mysqlCmd -u root -proot 2>&1 | Out-Null } catch {}
     if ($LASTEXITCODE -ne 0) {
         # Try without password (fresh install)
-        $setupSql | & $mysqlCmd -u root 2>$null
+        try { $setupSql | & $mysqlCmd -u root 2>&1 | Out-Null } catch {}
     }
     Write-Ok "Base '$DbName' et utilisateur '$DbUser' crees"
 
     # Run schema scripts
-    $sqlDir = Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) "..\sql"
+    $scriptDir = if ($PSScriptRoot) { $PSScriptRoot } else { $script:InstallDir }
+    $sqlDir = Join-Path $scriptDir "..\sql"
     if (-not (Test-Path $sqlDir)) {
-        $sqlDir = Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) "sql"
+        $sqlDir = Join-Path $scriptDir "sql"
     }
 
     $sqlFiles = @(
@@ -341,7 +342,12 @@ FLUSH PRIVILEGES;
         $filePath = Join-Path $sqlDir $file
         if (Test-Path $filePath) {
             Write-Info "Execution : $file"
-            Get-Content $filePath -Raw | & $mysqlCmd -u $DbUser -p$DbPassword $DbName 2>$null
+            try {
+                $sqlContent = Get-Content $filePath -Raw
+                $sqlContent | & $mysqlCmd -u $DbUser "-p$DbPassword" $DbName 2>&1 | Out-Null
+            } catch {
+                Write-Info "Avertissement sur $file : $($_.Exception.Message)"
+            }
             Write-Ok "$file"
         } else {
             Write-Info "Script non trouve (ignore) : $filePath"
@@ -352,14 +358,14 @@ FLUSH PRIVILEGES;
     $procFile = Join-Path $sqlDir "006_refresh_ventes_daily.sql"
     if (Test-Path $procFile) {
         Write-Info "Execution : 006_refresh_ventes_daily.sql"
-        & $mysqlCmd -u $DbUser -p$DbPassword $DbName -e "SOURCE $procFile" 2>$null
+        try { & $mysqlCmd -u $DbUser "-p$DbPassword" $DbName -e "SOURCE $procFile" 2>&1 | Out-Null } catch {}
         if ($LASTEXITCODE -ne 0) {
             # Fallback: read and execute without DELIMITER (strip it)
             $procContent = Get-Content $procFile -Raw
             $procContent = $procContent -replace 'DELIMITER \$\$', ''
             $procContent = $procContent -replace '\$\$', ';'
             $procContent = $procContent -replace 'DELIMITER ;', ''
-            $procContent | & $mysqlCmd -u $DbUser -p$DbPassword $DbName 2>$null
+            try { $procContent | & $mysqlCmd -u $DbUser "-p$DbPassword" $DbName 2>&1 | Out-Null } catch {}
         }
         Write-Ok "Procedure refresh_ventes_daily() creee"
     }
@@ -464,22 +470,24 @@ function Step-Service {
         New-Item -Path $logsDir -ItemType Directory -Force | Out-Null
     }
 
-    # Copy sync files
-    $srcDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-    $filesToCopy = @("sync.ts", "service.ts", "install-service.ts", "tsconfig.service.json")
-    foreach ($f in $filesToCopy) {
-        $src = Join-Path $srcDir $f
-        if (Test-Path $src) {
-            Copy-Item $src $script:InstallDir -Force
+    # Copy sync files (skip if source = destination)
+    $srcDir = if ($PSScriptRoot) { $PSScriptRoot } else { $script:InstallDir }
+    if ($srcDir -ne $script:InstallDir) {
+        $filesToCopy = @("sync.ts", "service.ts", "install-service.ts", "tsconfig.service.json")
+        foreach ($f in $filesToCopy) {
+            $src = Join-Path $srcDir $f
+            if (Test-Path $src) {
+                Copy-Item $src $script:InstallDir -Force
+            }
         }
-    }
 
-    # Copy SQL directory
-    $sqlSrc = Join-Path (Split-Path -Parent $srcDir) "sql"
-    $sqlDest = Join-Path $script:InstallDir "sql"
-    if (Test-Path $sqlSrc) {
-        if (-not (Test-Path $sqlDest)) { New-Item -Path $sqlDest -ItemType Directory -Force | Out-Null }
-        Copy-Item "$sqlSrc\*" $sqlDest -Force
+        # Copy SQL directory
+        $sqlSrc = Join-Path (Split-Path -Parent $srcDir) "sql"
+        $sqlDest = Join-Path $script:InstallDir "sql"
+        if (Test-Path $sqlSrc) {
+            if (-not (Test-Path $sqlDest)) { New-Item -Path $sqlDest -ItemType Directory -Force | Out-Null }
+            Copy-Item "$sqlSrc\*" $sqlDest -Force
+        }
     }
     Write-Ok "Fichiers copies"
 
@@ -530,6 +538,9 @@ function Step-Service {
             "node-firebird" = "^2.3.2"
             "node-schedule" = "^2.1.1"
             "node-windows" = "^1.0.0-beta.8"
+            "typescript" = "^5.6.0"
+            "@types/node" = "^20.0.0"
+            "@types/node-schedule" = "^2.1.0"
         }
     } | ConvertTo-Json -Depth 3
     Set-Content -Path (Join-Path $script:InstallDir "package.json") -Value $pkgJson -Encoding UTF8
@@ -537,21 +548,22 @@ function Step-Service {
     # npm install
     Write-Info "Installation des dependances npm..."
     Push-Location $script:InstallDir
-    try {
-        npm install --production 2>&1 | Out-Null
-        Write-Ok "Dependances installees"
-    } catch {
-        Write-Err "npm install echoue : $_"
+    $prevEAP = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    npm install --omit=dev 2>&1 | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        $ErrorActionPreference = $prevEAP
+        Write-Err "npm install echoue (exit code $LASTEXITCODE)"
         exit 1
     }
+    Write-Ok "Dependances installees"
 
     # Compile TypeScript -> dist/
     Write-Info "Compilation TypeScript..."
-    try {
-        npx tsc -p tsconfig.service.json 2>&1 | Out-Null
-        Write-Ok "TypeScript compile (dist/)"
-    } catch {
-        Write-Err "Compilation echouee : $_"
+    npx tsc -p tsconfig.service.json 2>&1 | Out-Null
+    $ErrorActionPreference = $prevEAP
+    if ($LASTEXITCODE -ne 0) {
+        Write-Err "Compilation echouee (exit code $LASTEXITCODE)"
         Write-Info "Tentative avec tsx au lieu de tsc..."
     }
 
