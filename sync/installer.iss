@@ -41,11 +41,10 @@ Source: "..\sql\*.sql"; DestDir: "{app}\sql"; Flags: ignoreversion
 Name: "{group}\Desinstaller {#MyAppName}"; Filename: "{uninstallexe}"
 
 [Run]
-Filename: "powershell.exe"; \
-  Parameters: "-ExecutionPolicy Bypass -NoExit -File ""{app}\setup.ps1"""; \
-  Description: "Lancer la configuration du serveur Ginkoyes"; \
+Filename: "cmd.exe"; \
+  Parameters: "/k powershell -ExecutionPolicy Bypass -File ""{app}\setup.ps1"""; \
   StatusMsg: "Configuration du serveur Ginkoyes..."; \
-  Flags: postinstall waituntilterminated runascurrentuser
+  Flags: waituntilterminated
 
 [UninstallRun]
 Filename: "powershell.exe"; \
