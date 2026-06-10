@@ -619,26 +619,18 @@ function Step-FirstSync {
         return
     }
 
-    Write-Info "Lancement de la premiere synchronisation..."
-    Write-Info "Cela peut prendre plusieurs minutes..."
+    Write-Info "Lancement de la premiere synchronisation en arriere-plan..."
+    Write-Info "La sync peut prendre 10-15 minutes selon la taille du fichier GBK."
 
-    Push-Location $script:InstallDir
-    try {
-        $output = node dist\sync.js 2>&1
-        $output | ForEach-Object { Write-Info $_ }
-
-        # Verify
-        $rowCount = & $script:MysqlCmd -u $DbUser -p$DbPassword $DbName -N -e "SELECT COUNT(*) FROM _ventes_daily" 2>$null
-        if ($rowCount -and [int]$rowCount -gt 0) {
-            Write-Ok "Premiere sync reussie : $rowCount lignes dans _ventes_daily"
-        } else {
-            Write-Info "Sync terminee. Verifiez les logs dans $($script:InstallDir)\logs\sync.log"
-        }
-    } catch {
-        Write-Err "Premiere sync echouee : $_"
-        Write-Info "Le service reessayera a $($script:SyncTime). Verifiez les logs."
+    # Lancer la sync en arriere-plan pour ne pas bloquer l'installeur
+    $syncScript = Join-Path $script:InstallDir "dist\sync.js"
+    if (Test-Path $syncScript) {
+        Start-Process -FilePath "node" -ArgumentList "`"$syncScript`"" -WorkingDirectory $script:InstallDir -WindowStyle Hidden
+        Write-Ok "Sync lancee en arriere-plan"
+        Write-Info "Suivez la progression dans $($script:InstallDir)\logs\sync.log"
+    } else {
+        Write-Info "dist\sync.js introuvable, la sync sera lancee par le service a $($script:SyncTime)."
     }
-    Pop-Location
 }
 
 # ============================================================
@@ -681,3 +673,5 @@ Step-Tailscale
 Step-Service
 Step-FirstSync
 Show-Summary
+
+exit 0
