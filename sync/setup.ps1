@@ -1,14 +1,27 @@
+param(
+    [string]$GbkFilePath = "",
+    [string]$GbakExePath = "",
+    [string]$InstallDir = "",
+    [string]$SyncTime = "",
+    [string]$TailscaleKey = ""
+)
+
 # ============================================================
 # Ginkoyes V2 - Installeur tout-en-un
 #
 # Installe : Node.js, MariaDB, Tailscale, BDD, service sync
 # Usage : powershell -ExecutionPolicy Bypass -File setup.ps1
+#   Mode interactif : sans parametres
+#   Mode silencieux : -GbkFilePath "..." -GbakExePath "..." etc.
 # Doit etre lance en tant qu'administrateur
 # ============================================================
 
 #Requires -RunAsAdministrator
 
 $ErrorActionPreference = "Stop"
+
+# Mode non-interactif si au moins GbkFilePath est fourni
+$NonInteractive = -not [string]::IsNullOrWhiteSpace($GbkFilePath)
 
 # ============================================================
 # Variables globales
@@ -101,26 +114,38 @@ function Step-Prerequisites {
     Write-Ok "OS : $($os.VersionString)"
 
     # Check Firebird / gbak.exe
-    $gbakPaths = @(
-        "C:\Program Files\Firebird\Firebird_3_0\gbak.exe",
-        "C:\Program Files (x86)\Firebird\Firebird_3_0\gbak.exe",
-        "C:\Ginkoia\Firebird\gbak.exe"
-    )
-    $script:GbakPath = $null
-    foreach ($p in $gbakPaths) {
-        if (Test-Path $p) {
-            $script:GbakPath = $p
-            break
-        }
-    }
-    if ($script:GbakPath) {
-        Write-Ok "Firebird gbak.exe detecte : $($script:GbakPath)"
-    } else {
-        Write-Err "gbak.exe non trouve. Verifiez que Firebird 3.0 est installe."
-        $script:GbakPath = Read-Host "  Chemin vers gbak.exe"
-        if (-not (Test-Path $script:GbakPath)) {
-            Write-Err "Fichier introuvable : $($script:GbakPath)"
+    if (-not [string]::IsNullOrWhiteSpace($GbakExePath)) {
+        # Parametre fourni par l'installeur GUI
+        $script:GbakPath = $GbakExePath
+        if (Test-Path $script:GbakPath) {
+            Write-Ok "Firebird gbak.exe (parametre) : $($script:GbakPath)"
+        } else {
+            Write-Err "gbak.exe introuvable au chemin fourni : $($script:GbakPath)"
             exit 1
+        }
+    } else {
+        # Auto-detection
+        $gbakPaths = @(
+            "C:\Program Files\Firebird\Firebird_3_0\gbak.exe",
+            "C:\Program Files (x86)\Firebird\Firebird_3_0\gbak.exe",
+            "C:\Ginkoia\Firebird\gbak.exe"
+        )
+        $script:GbakPath = $null
+        foreach ($p in $gbakPaths) {
+            if (Test-Path $p) {
+                $script:GbakPath = $p
+                break
+            }
+        }
+        if ($script:GbakPath) {
+            Write-Ok "Firebird gbak.exe detecte : $($script:GbakPath)"
+        } else {
+            Write-Err "gbak.exe non trouve. Verifiez que Firebird 3.0 est installe."
+            $script:GbakPath = Read-Host "  Chemin vers gbak.exe"
+            if (-not (Test-Path $script:GbakPath)) {
+                Write-Err "Fichier introuvable : $($script:GbakPath)"
+                exit 1
+            }
         }
     }
 }
@@ -132,25 +157,34 @@ function Step-Prerequisites {
 function Step-Configuration {
     Write-Step 2 7 "Configuration"
 
-    # GBK path
-    $script:GbkPath = Ask-Input "Chemin du fichier SV.GBK" $DefaultGbkPath
-    if (-not (Test-Path $script:GbkPath)) {
-        Write-Err "Fichier SV.GBK introuvable : $($script:GbkPath)"
-        Write-Info "La premiere synchronisation echouera si le fichier n'est pas present."
-        $continue = Read-Host "  Continuer quand meme ? (O/N)"
-        if ($continue -ne "O" -and $continue -ne "o") { exit 0 }
+    if ($NonInteractive) {
+        # Mode non-interactif : utiliser les parametres fournis
+        $script:GbkPath = $GbkFilePath
+        $script:InstallDir = if ([string]::IsNullOrWhiteSpace($InstallDir)) { $DefaultInstallDir } else { $InstallDir }
+        $script:SyncTime = if ([string]::IsNullOrWhiteSpace($SyncTime)) { $DefaultSyncTime } else { $SyncTime }
+        $script:TailscaleKey = $TailscaleKey
+
+        if (-not (Test-Path $script:GbkPath)) {
+            Write-Info "SV.GBK non present a $($script:GbkPath) - la sync sera lancee quand le fichier sera disponible."
+        } else {
+            Write-Ok "SV.GBK trouve : $($script:GbkPath)"
+        }
     } else {
-        Write-Ok "SV.GBK trouve : $($script:GbkPath)"
+        # Mode interactif : Read-Host
+        $script:GbkPath = Ask-Input "Chemin du fichier SV.GBK" $DefaultGbkPath
+        if (-not (Test-Path $script:GbkPath)) {
+            Write-Err "Fichier SV.GBK introuvable : $($script:GbkPath)"
+            Write-Info "La premiere synchronisation echouera si le fichier n'est pas present."
+            $continue = Read-Host "  Continuer quand meme ? (O/N)"
+            if ($continue -ne "O" -and $continue -ne "o") { exit 0 }
+        } else {
+            Write-Ok "SV.GBK trouve : $($script:GbkPath)"
+        }
+
+        $script:InstallDir = Ask-Input "Repertoire d'installation" $DefaultInstallDir
+        $script:SyncTime = Ask-Input "Heure de synchronisation quotidienne (HH:MM)" $DefaultSyncTime
+        $script:TailscaleKey = Read-Host "  Tailscale auth key (laisser vide pour ignorer Tailscale)"
     }
-
-    # Install dir
-    $script:InstallDir = Ask-Input "Repertoire d'installation" $DefaultInstallDir
-
-    # Sync time
-    $script:SyncTime = Ask-Input "Heure de synchronisation quotidienne (HH:MM)" $DefaultSyncTime
-
-    # Tailscale auth key
-    $script:TailscaleKey = Read-Host "  Tailscale auth key (laisser vide pour ignorer Tailscale)"
 
     Write-Ok "Configuration validee"
     Write-Info "  SV.GBK     : $($script:GbkPath)"
