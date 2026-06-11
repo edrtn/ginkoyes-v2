@@ -1,9 +1,9 @@
 // @ts-check
 
 /** @type {any} */
-const api = window.api;
+const gkApi = window.api;
 
-if (!api) {
+if (!gkApi) {
   const _log = document.getElementById('log-output');
   if (_log) _log.textContent = '[ERREUR] window.api est undefined - le preload.js n\'a pas fonctionne\n';
 }
@@ -77,7 +77,7 @@ function setBadge(el, status) {
 async function loadSyncStatus() {
   let rows;
   try {
-    rows = await api.getSyncStatus();
+    rows = await gkApi.getSyncStatus();
   } catch (err) {
     elLogOutput.textContent += `[ERR] getSyncStatus: ${err.message}\n`;
     return;
@@ -123,7 +123,7 @@ async function loadSyncStatus() {
 async function loadServiceStatus() {
   let result;
   try {
-    result = await api.getServiceStatus();
+    result = await gkApi.getServiceStatus();
   } catch (err) {
     elLogOutput.textContent += `[ERR] getServiceStatus: ${err.message}\n`;
     return;
@@ -142,7 +142,7 @@ async function loadServiceStatus() {
 async function loadVpnStatus() {
   let status;
   try {
-    status = await api.tailscaleStatus();
+    status = await gkApi.tailscaleStatus();
   } catch (err) {
     elLogOutput.textContent += `[ERR] tailscaleStatus: ${err.message}\n`;
     return;
@@ -158,14 +158,14 @@ async function loadVpnStatus() {
   }
 
   // Charger la cle depuis la DB
-  const vpnConfig = await api.getVpnConfig();
+  const vpnConfig = await gkApi.getVpnConfig();
   if (vpnConfig && !vpnConfig.error && vpnConfig.auth_key) {
     elVpnKeyInput.value = vpnConfig.auth_key;
   }
 }
 
 async function loadSyncLog() {
-  const result = await api.getSyncLog();
+  const result = await gkApi.getSyncLog();
   if (result.lines && result.lines.length > 0) {
     elLogOutput.textContent = result.lines.join('\n');
     elLogOutput.scrollTop = elLogOutput.scrollHeight;
@@ -195,7 +195,7 @@ elBtnSync.addEventListener('click', async () => {
   elBtnSync.textContent = 'Sync en cours...';
   elLogOutput.textContent = '';
 
-  const result = await api.triggerSync();
+  const result = await gkApi.triggerSync();
   if (result.error) {
     elLogOutput.textContent = `[Erreur] ${result.error}`;
     isSyncing = false;
@@ -211,7 +211,7 @@ elBtnSaveKey.addEventListener('click', async () => {
   elBtnSaveKey.disabled = true;
   elBtnSaveKey.textContent = 'Enregistrement...';
 
-  const result = await api.setVpnKey(key);
+  const result = await gkApi.setVpnKey(key);
   if (result.error) {
     alert(`Erreur : ${result.error}`);
   } else {
@@ -228,12 +228,12 @@ elBtnRefresh.addEventListener('click', refreshAll);
 
 // --- Sync streaming events ---
 
-api.onSyncOutput((data) => {
+gkApi.onSyncOutput((data) => {
   elLogOutput.textContent += data;
   elLogOutput.scrollTop = elLogOutput.scrollHeight;
 });
 
-api.onSyncFinished((code) => {
+gkApi.onSyncFinished((code) => {
   isSyncing = false;
   elBtnSync.disabled = false;
   elBtnSync.textContent = 'Lancer sync';
