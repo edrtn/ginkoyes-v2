@@ -70,13 +70,20 @@ function setBadge(el, status) {
 // --- Data loading ---
 
 async function loadSyncStatus() {
-  const rows = await api.getSyncStatus();
+  let rows;
+  try {
+    rows = await api.getSyncStatus();
+  } catch (err) {
+    elLogOutput.textContent += `[ERR] getSyncStatus: ${err.message}\n`;
+    return;
+  }
   if (rows.error || !Array.isArray(rows) || rows.length === 0) {
     elSyncDate.textContent = '--';
     elSyncDuration.textContent = '--';
     elSyncRows.textContent = '--';
     setBadge(elSyncResult, null);
     elHistoryBody.innerHTML = '';
+    if (rows.error) elLogOutput.textContent += `[ERR] getSyncStatus: ${rows.error}\n`;
     return;
   }
 
@@ -109,7 +116,13 @@ async function loadSyncStatus() {
 }
 
 async function loadServiceStatus() {
-  const result = await api.getServiceStatus();
+  let result;
+  try {
+    result = await api.getServiceStatus();
+  } catch (err) {
+    elLogOutput.textContent += `[ERR] getServiceStatus: ${err.message}\n`;
+    return;
+  }
   if (result.running) {
     elServiceStatus.className = 'badge badge-success';
     elServiceStatus.textContent = 'En marche';
@@ -122,7 +135,13 @@ async function loadServiceStatus() {
 }
 
 async function loadVpnStatus() {
-  const status = await api.tailscaleStatus();
+  let status;
+  try {
+    status = await api.tailscaleStatus();
+  } catch (err) {
+    elLogOutput.textContent += `[ERR] tailscaleStatus: ${err.message}\n`;
+    return;
+  }
   if (status.connected) {
     elVpnStatus.className = 'badge badge-success';
     elVpnStatus.textContent = 'Connecte';
@@ -153,12 +172,19 @@ async function loadSyncLog() {
 }
 
 async function refreshAll() {
-  await Promise.allSettled([
+  const results = await Promise.allSettled([
     loadSyncStatus(),
     loadServiceStatus(),
     loadVpnStatus(),
     loadSyncLog(),
   ]);
+  // Afficher les erreurs dans le log pour diagnostic
+  const errors = results
+    .filter(r => r.status === 'rejected')
+    .map(r => r.reason);
+  if (errors.length > 0) {
+    elLogOutput.textContent = '[DIAGNOSTIC] Erreurs au chargement:\n' + errors.map(e => e.message || e).join('\n');
+  }
 }
 
 // --- Actions ---
@@ -226,5 +252,6 @@ api.onSyncFinished((code) => {
 
 // --- Auto-refresh ---
 
+elLogOutput.textContent = '[INFO] Ginkoyes Serveur demarre...\n';
 refreshAll();
 setInterval(refreshAll, 30000);
