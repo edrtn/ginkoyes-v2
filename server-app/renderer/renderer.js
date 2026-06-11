@@ -3,6 +3,11 @@
 /** @type {any} */
 const api = window.api;
 
+if (!api) {
+  const _log = document.getElementById('log-output');
+  if (_log) _log.textContent = '[ERREUR] window.api est undefined - le preload.js n\'a pas fonctionne\n';
+}
+
 // --- DOM elements ---
 const elServiceStatus = document.getElementById('service-status');
 const elNextSync = document.getElementById('next-sync');
@@ -172,19 +177,12 @@ async function loadSyncLog() {
 }
 
 async function refreshAll() {
-  const results = await Promise.allSettled([
+  await Promise.allSettled([
     loadSyncStatus(),
     loadServiceStatus(),
     loadVpnStatus(),
     loadSyncLog(),
   ]);
-  // Afficher les erreurs dans le log pour diagnostic
-  const errors = results
-    .filter(r => r.status === 'rejected')
-    .map(r => r.reason);
-  if (errors.length > 0) {
-    elLogOutput.textContent = '[DIAGNOSTIC] Erreurs au chargement:\n' + errors.map(e => e.message || e).join('\n');
-  }
 }
 
 // --- Actions ---
@@ -252,6 +250,5 @@ api.onSyncFinished((code) => {
 
 // --- Auto-refresh ---
 
-elLogOutput.textContent = '[INFO] Ginkoyes Serveur demarre...\n';
 refreshAll();
 setInterval(refreshAll, 30000);

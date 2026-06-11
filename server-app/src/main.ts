@@ -91,8 +91,19 @@ function createWindow(): void {
     ? path.join(__dirname, '..', 'renderer', 'index.html')
     : path.join(process.resourcesPath, 'renderer', 'index.html');
 
-  mainWindow.loadFile(htmlPath);
+  if (!fs.existsSync(htmlPath)) {
+    console.error(`[ERREUR] index.html introuvable: ${htmlPath}`);
+    const fallbackHtml = `<html><body><h1>Erreur</h1><p>index.html introuvable: ${htmlPath}</p></body></html>`;
+    mainWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(fallbackHtml)}`);
+  } else {
+    mainWindow.loadFile(htmlPath);
+  }
+
   mainWindow.setMenuBarVisibility(false);
+
+  if (isDev) {
+    mainWindow.webContents.openDevTools();
+  }
 }
 
 // --- IPC Handlers ---

@@ -11,9 +11,12 @@ extraResources:
     to: renderer
 win:
   target:
-    - target: portable
+    - target: nsis
       arch:
         - x64
   icon: null
-portable:
-  artifactName: "Ginkoyes Serveur.exe"
+nsis:
+  oneClick: false
+  perMachine: true
+  allowToChangeInstallationDirectory: true
+  artifactName: "Ginkoyes Serveur Setup ${version}.exe"
