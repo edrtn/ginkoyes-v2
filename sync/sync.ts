@@ -143,13 +143,32 @@ const TABLES: TableDef[] = [
 function restoreGbk(cfg: SyncConfig, log: (msg: string) => void): void {
   const { gbakPath, gbkPath, tempFdbPath, user, password } = cfg.firebird;
 
+  // Nettoyage du FDB temporaire précédent (peut être verrouillé par Firebird)
   if (fs.existsSync(tempFdbPath)) {
-    fs.unlinkSync(tempFdbPath);
-    log("Ancien FDB temporaire supprimé");
+    try {
+      fs.unlinkSync(tempFdbPath);
+      log("Ancien FDB temporaire supprimé");
+    } catch {
+      // Fichier verrouillé — tenter renommage
+      const oldPath = tempFdbPath + ".old";
+      try {
+        if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+      } catch {}
+      try {
+        fs.renameSync(tempFdbPath, oldPath);
+        log("Ancien FDB temporaire renommé (.old)");
+      } catch (renameErr) {
+        log(`WARN: Impossible de supprimer/renommer le FDB temporaire: ${renameErr}`);
+        log("Tentative de restauration par ecrasement...");
+      }
+    }
   }
 
   log(`Restauration GBK : ${gbkPath} → ${tempFdbPath}`);
-  const cmd = `"${gbakPath}" -c -FIX_FSS_METADATA WIN1252 -FIX_FSS_DATA WIN1252 -page_size 16384 -user ${user} -password ${password} "${gbkPath}" "${tempFdbPath}"`;
+  // -REP pour écraser un FDB existant (si verrouillé et non supprimable)
+  const replaceFlag = fs.existsSync(tempFdbPath) ? "-REP" : "-c";
+  const cmd = `"${gbakPath}" ${replaceFlag} -FIX_FSS_METADATA WIN1252 -FIX_FSS_DATA WIN1252 -page_size 16384 -user ${user} -password ${password} "${gbkPath}" "${tempFdbPath}"`;
+  log(`gbak mode: ${replaceFlag}`);
   try {
     execSync(cmd, { stdio: "pipe", timeout: 43_200_000 }); // 12h max
   } catch (err: unknown) {
@@ -259,10 +278,30 @@ async function syncTable(
 // ============================================================
 
 function cleanupTempFdb(tempFdbPath: string, log: (msg: string) => void): void {
-  if (fs.existsSync(tempFdbPath)) {
+  if (!fs.existsSync(tempFdbPath)) return;
+
+  // Essai 1 : suppression directe
+  try {
     fs.unlinkSync(tempFdbPath);
     log("FDB temporaire supprimé");
+    return;
+  } catch {
+    // Fichier verrouillé (Firebird le tient ouvert)
   }
+
+  // Essai 2 : renommer puis supprimer (debloque parfois le lock)
+  const renamed = tempFdbPath + ".old";
+  try {
+    if (fs.existsSync(renamed)) fs.unlinkSync(renamed);
+  } catch {}
+  try {
+    fs.renameSync(tempFdbPath, renamed);
+    fs.unlinkSync(renamed);
+    log("FDB temporaire supprimé (après renommage)");
+    return;
+  } catch {}
+
+  log("WARN: Impossible de supprimer le FDB temporaire (fichier verrouillé). Il sera écrasé au prochain sync.");
 }
 
 // ============================================================
