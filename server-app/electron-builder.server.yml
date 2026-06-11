@@ -1,0 +1,19 @@
+appId: com.ginkoyes.serveur
+productName: Ginkoyes Serveur
+directories:
+  output: release
+files:
+  - dist/**/*
+  - renderer/**/*
+  - package.json
+extraResources:
+  - from: renderer
+    to: renderer
+win:
+  target:
+    - target: portable
+      arch:
+        - x64
+  icon: null
+portable:
+  artifactName: "Ginkoyes Serveur.exe"

@@ -1,5 +1,5 @@
 #define MyAppName "Ginkoyes Serveur"
-#define MyAppVersion "1.1.9"
+#define MyAppVersion "1.2.0"
 #define MyAppPublisher "Ginkoyes"
 #define MyAppURL "https://github.com/edrtn/ginkoyes-v2"
 
@@ -34,10 +34,15 @@ Source: "install-service.ts"; DestDir: "{app}"; Flags: ignoreversion
 Source: "tsconfig.service.json"; DestDir: "{app}"; Flags: ignoreversion
 Source: "sync-config.json"; DestDir: "{app}"; Flags: ignoreversion
 
+; Application GUI
+Source: "..\server-app\release\Ginkoyes Serveur.exe"; DestDir: "{app}"; Flags: ignoreversion
+
 ; Scripts SQL schema
 Source: "..\sql\*.sql"; DestDir: "{app}\sql"; Flags: ignoreversion
 
 [Icons]
+Name: "{group}\{#MyAppName}"; Filename: "{app}\Ginkoyes Serveur.exe"
+Name: "{commondesktop}\{#MyAppName}"; Filename: "{app}\Ginkoyes Serveur.exe"
 Name: "{group}\Desinstaller {#MyAppName}"; Filename: "{uninstallexe}"
 
 [UninstallRun]

@@ -50,3 +50,8 @@ next-env.d.ts
 *.GBK
 *.fdb
 *.FDB
+
+# server-app
+server-app/dist/
+server-app/release/
+server-app/node_modules/

@@ -151,8 +151,21 @@ function restoreGbk(cfg: SyncConfig, log: (msg: string) => void): void {
   log(`Restauration GBK : ${gbkPath} → ${tempFdbPath}`);
   const cmd = `"${gbakPath}" -c -FIX_FSS_METADATA WIN1252 -FIX_FSS_DATA WIN1252 -page_size 16384 -user ${user} -password ${password} "${gbkPath}" "${tempFdbPath}"`;
   try {
-    execSync(cmd, { stdio: "pipe", timeout: 600_000 });
+    execSync(cmd, { stdio: "pipe", timeout: 43_200_000 }); // 12h max
   } catch (err: unknown) {
+    // Si c'est un timeout ou SIGTERM, le FDB est incomplet → on le supprime
+    const isTimeout = err instanceof Error && (
+      (err as any).killed === true ||
+      (err as any).signal === 'SIGTERM' ||
+      err.message.includes('TIMEOUT') ||
+      err.message.includes('timed out')
+    );
+    if (isTimeout) {
+      if (fs.existsSync(tempFdbPath)) {
+        fs.unlinkSync(tempFdbPath);
+      }
+      throw new Error(`gbak timeout : la restauration a depasse le delai maximum`);
+    }
     // gbak returns exit code 1 for warnings (table attribute not recognized, etc.)
     // Check if the FDB file was actually created despite the warnings
     if (!fs.existsSync(tempFdbPath)) {

@@ -14,6 +14,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Build Ginkoyes Serveur GUI
+        working-directory: server-app
+        run: |
+          npm ci
+          npm run compile
+          npx electron-builder --config electron-builder.server.yml --win portable --x64 --publish never
+
       - name: Install InnoSetup
         run: choco install innosetup -y
 

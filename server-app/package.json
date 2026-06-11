@@ -1,0 +1,23 @@
+{
+  "name": "ginkoyes-serveur",
+  "version": "1.0.0",
+  "description": "Ginkoyes Serveur - Dashboard de gestion",
+  "main": "dist/main.js",
+  "scripts": {
+    "dev": "tsc && electron .",
+    "build": "tsc && electron-builder --config electron-builder.server.yml",
+    "compile": "tsc"
+  },
+  "dependencies": {
+    "mysql2": "^3.11.0"
+  },
+  "devDependencies": {
+    "electron": "^32.0.0",
+    "electron-builder": "^25.0.0",
+    "typescript": "^5.6.0",
+    "@types/node": "^22.0.0"
+  },
+  "allowScripts": {
+    "electron@32.3.3": true
+  }
+}
