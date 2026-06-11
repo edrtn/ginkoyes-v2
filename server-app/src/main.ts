@@ -138,6 +138,10 @@ function registerIpcHandlers(): void {
       return { error: 'Une synchronisation est deja en cours' };
     }
 
+    const sendLog = (msg: string) => {
+      mainWindow?.webContents.send('sync-output', msg + '\n');
+    };
+
     // Verifie qu'il n'y a pas de sync running en DB
     try {
       const rows = await dbQuery<any[]>(
@@ -146,23 +150,80 @@ function registerIpcHandlers(): void {
       if (rows.length > 0) {
         return { error: 'Une synchronisation est deja en cours (status=running en base)' };
       }
-    } catch {
-      // Si la requete echoue on tente quand meme
+    } catch (err: any) {
+      sendLog(`[WARN] Impossible de verifier _sync_meta: ${err.message}`);
     }
 
+    // Determine le repertoire d'installation
     const installDir = getInstallDir();
-    const syncScript = path.join(installDir, 'dist', 'sync.js');
+    sendLog(`[INFO] Repertoire d'installation: ${installDir}`);
 
-    // Verifie que le script existe
-    if (!fs.existsSync(syncScript)) {
-      // Essaye sync.js directement (dev)
-      const altScript = path.join(installDir, 'sync', 'dist', 'sync.js');
-      if (!fs.existsSync(altScript)) {
-        return { error: `Script sync introuvable: ${syncScript}` };
+    // Cherche le script sync.js
+    const candidates = [
+      path.join(installDir, 'dist', 'sync.js'),
+      path.join(installDir, 'sync', 'dist', 'sync.js'),
+    ];
+
+    let syncScript: string | null = null;
+    for (const candidate of candidates) {
+      sendLog(`[INFO] Recherche sync.js: ${candidate} -> ${fs.existsSync(candidate) ? 'TROUVE' : 'absent'}`);
+      if (fs.existsSync(candidate)) {
+        syncScript = candidate;
+        break;
       }
-      syncProcess = spawn('node', [altScript], { cwd: installDir });
-    } else {
-      syncProcess = spawn('node', [syncScript], { cwd: installDir });
+    }
+
+    if (!syncScript) {
+      // Liste les fichiers du repertoire pour diagnostic
+      try {
+        const files = fs.readdirSync(installDir);
+        sendLog(`[DEBUG] Contenu de ${installDir}: ${files.join(', ')}`);
+        const distDir = path.join(installDir, 'dist');
+        if (fs.existsSync(distDir)) {
+          const distFiles = fs.readdirSync(distDir);
+          sendLog(`[DEBUG] Contenu de ${distDir}: ${distFiles.join(', ')}`);
+        }
+      } catch {}
+      return { error: `Script sync.js introuvable dans ${installDir}` };
+    }
+
+    sendLog(`[INFO] Lancement: node ${syncScript}`);
+
+    // Verifie que node est accessible
+    let nodePath = 'node';
+    try {
+      const { execSync } = require('child_process');
+      const nodeVersion = execSync('node --version', { timeout: 5000 }).toString().trim();
+      sendLog(`[INFO] Node.js: ${nodeVersion}`);
+    } catch {
+      // node pas dans le PATH, essayer des chemins connus
+      const knownPaths = [
+        'C:\\Program Files\\nodejs\\node.exe',
+        'C:\\Program Files (x86)\\nodejs\\node.exe',
+      ];
+      let found = false;
+      for (const np of knownPaths) {
+        if (fs.existsSync(np)) {
+          nodePath = np;
+          found = true;
+          sendLog(`[INFO] Node.js trouve: ${np}`);
+          break;
+        }
+      }
+      if (!found) {
+        sendLog(`[ERREUR] Node.js introuvable dans le PATH et dans les chemins connus`);
+        return { error: 'Node.js introuvable. Verifiez que Node.js est installe.' };
+      }
+    }
+
+    try {
+      syncProcess = spawn(nodePath, [syncScript], {
+        cwd: installDir,
+        env: { ...process.env },
+      });
+    } catch (err: any) {
+      sendLog(`[ERREUR] Impossible de lancer le processus: ${err.message}`);
+      return { error: `Impossible de lancer sync: ${err.message}` };
     }
 
     syncProcess.stdout?.on('data', (data: Buffer) => {
@@ -174,13 +235,14 @@ function registerIpcHandlers(): void {
     });
 
     syncProcess.on('close', (code: number | null) => {
+      sendLog(`[INFO] Processus sync termine (code: ${code})`);
       syncProcess = null;
       mainWindow?.webContents.send('sync-finished', code);
     });
 
     syncProcess.on('error', (err: Error) => {
+      sendLog(`[ERREUR] Processus sync echoue: ${err.message}`);
       syncProcess = null;
-      mainWindow?.webContents.send('sync-output', `[ERREUR] ${err.message}\n`);
       mainWindow?.webContents.send('sync-finished', 1);
     });
 
