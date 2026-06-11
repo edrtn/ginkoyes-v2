@@ -1,6 +1,6 @@
 {
   "name": "ginkoyes-serveur",
-  "version": "1.0.0",
+  "version": "1.2.1",
   "description": "Ginkoyes Serveur - Dashboard de gestion",
   "main": "dist/main.js",
   "scripts": {
