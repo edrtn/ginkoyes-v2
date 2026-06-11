@@ -612,25 +612,8 @@ function Step-Service {
 
 function Step-FirstSync {
     Write-Step 7 7 "Premiere synchronisation"
-
-    if (-not (Test-Path $script:GbkPath)) {
-        Write-Info "SV.GBK non present, premiere sync ignoree."
-        Write-Info "La sync sera lancee automatiquement a $($script:SyncTime) quand le fichier sera disponible."
-        return
-    }
-
-    Write-Info "Lancement de la premiere synchronisation en arriere-plan..."
-    Write-Info "La sync peut prendre 10-15 minutes selon la taille du fichier GBK."
-
-    # Lancer la sync en arriere-plan pour ne pas bloquer l'installeur
-    $syncScript = Join-Path $script:InstallDir "dist\sync.js"
-    if (Test-Path $syncScript) {
-        Start-Process -FilePath "node" -ArgumentList "`"$syncScript`"" -WorkingDirectory $script:InstallDir -WindowStyle Hidden
-        Write-Ok "Sync lancee en arriere-plan"
-        Write-Info "Suivez la progression dans $($script:InstallDir)\logs\sync.log"
-    } else {
-        Write-Info "dist\sync.js introuvable, la sync sera lancee par le service a $($script:SyncTime)."
-    }
+    Write-Info "La premiere synchronisation n'est pas lancee automatiquement."
+    Write-Info "Ouvrez 'Ginkoyes Serveur' depuis le bureau et cliquez sur 'Lancer sync'."
 }
 
 # ============================================================
