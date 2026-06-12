@@ -19,21 +19,22 @@ interface SyncConfig {
   };
 }
 
+const GINKOYES_DIR = 'C:\\Ginkoyes';
+
 function getConfigPath(): string {
-  // En prod : meme repertoire que l'exe
-  const exeDir = path.dirname(process.execPath);
-  const configInExeDir = path.join(exeDir, 'sync-config.json');
-  if (fs.existsSync(configInExeDir)) return configInExeDir;
+  // 1. C:\Ginkoyes (deploye)
+  const deployed = path.join(GINKOYES_DIR, 'sync-config.json');
+  if (fs.existsSync(deployed)) return deployed;
 
-  // Fallback : C:\Ginkoyes
-  const fallback = 'C:\\Ginkoyes\\sync-config.json';
-  if (fs.existsSync(fallback)) return fallback;
+  // 2. Resources Electron (bundled)
+  const bundled = path.join(process.resourcesPath, 'sync', 'sync-config.json');
+  if (fs.existsSync(bundled)) return bundled;
 
-  // Dev : repertoire parent (sync/)
+  // 3. Dev : repertoire parent (sync/)
   const devPath = path.join(__dirname, '..', '..', 'sync', 'sync-config.json');
   if (fs.existsSync(devPath)) return devPath;
 
-  return configInExeDir; // retourne le chemin par defaut meme si absent
+  return deployed;
 }
 
 function loadConfig(): SyncConfig {
@@ -43,10 +44,47 @@ function loadConfig(): SyncConfig {
 }
 
 function getInstallDir(): string {
-  const exeDir = path.dirname(process.execPath);
-  if (fs.existsSync(path.join(exeDir, 'sync-config.json'))) return exeDir;
-  if (fs.existsSync('C:\\Ginkoyes\\sync-config.json')) return 'C:\\Ginkoyes';
+  // 1. C:\Ginkoyes (deploye)
+  if (fs.existsSync(path.join(GINKOYES_DIR, 'sync-config.json'))) return GINKOYES_DIR;
+  // 2. Resources Electron (bundled)
+  if (fs.existsSync(path.join(process.resourcesPath, 'sync', 'sync-config.json'))) return path.join(process.resourcesPath, 'sync');
+  // 3. Dev
   return path.join(__dirname, '..', '..');
+}
+
+function deployFiles(): void {
+  if (!app.isPackaged) return;
+
+  const syncDir = path.join(process.resourcesPath, 'sync');
+  if (!fs.existsSync(syncDir)) return;
+
+  // Creer C:\Ginkoyes et sous-dossiers
+  for (const dir of [GINKOYES_DIR, path.join(GINKOYES_DIR, 'dist'), path.join(GINKOYES_DIR, 'logs'), path.join(GINKOYES_DIR, 'sql')]) {
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  }
+
+  // Copier sync-config.json (seulement si absent — ne pas ecraser la config utilisateur)
+  const cfgDest = path.join(GINKOYES_DIR, 'sync-config.json');
+  if (!fs.existsSync(cfgDest)) {
+    const cfgSrc = path.join(syncDir, 'sync-config.json');
+    if (fs.existsSync(cfgSrc)) fs.copyFileSync(cfgSrc, cfgDest);
+  }
+
+  // Copier sync dist (toujours mettre a jour)
+  const distSrc = path.join(syncDir, 'dist');
+  if (fs.existsSync(distSrc)) {
+    for (const file of fs.readdirSync(distSrc)) {
+      fs.copyFileSync(path.join(distSrc, file), path.join(GINKOYES_DIR, 'dist', file));
+    }
+  }
+
+  // Copier SQL (toujours mettre a jour)
+  const sqlSrc = path.join(process.resourcesPath, 'sql');
+  if (fs.existsSync(sqlSrc)) {
+    for (const file of fs.readdirSync(sqlSrc)) {
+      fs.copyFileSync(path.join(sqlSrc, file), path.join(GINKOYES_DIR, 'sql', file));
+    }
+  }
 }
 
 // --- DB helper ---
@@ -346,6 +384,7 @@ function registerIpcHandlers(): void {
 // --- App lifecycle ---
 
 app.whenReady().then(() => {
+  deployFiles();
   registerIpcHandlers();
   createWindow();
 });

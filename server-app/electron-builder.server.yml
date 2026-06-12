@@ -9,6 +9,14 @@ files:
 extraResources:
   - from: renderer
     to: renderer
+  - from: ../sync/dist
+    to: sync/dist
+  - from: ../sync/sync-config.json
+    to: sync/sync-config.json
+  - from: ../sql
+    to: sql
+    filter:
+      - "*.sql"
 win:
   target:
     - target: nsis

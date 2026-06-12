@@ -15,6 +15,6 @@
   },
   "sync": {
     "batchSize": 1000,
-    "logPath": "C:\\Ginkoia\\Logs\\sync.log"
+    "logPath": "C:\\Ginkoyes\\logs\\sync.log"
   }
 }
