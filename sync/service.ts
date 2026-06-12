@@ -27,7 +27,7 @@ function loadConfig(): SyncConfig {
 // ============================================================
 
 function log(cfg: SyncConfig, message: string) {
-  const timestamp = new Date().toISOString();
+  const timestamp = new Date().toLocaleString("fr-FR", { timeZone: "Europe/Paris", hour12: false }).replace(",", "");
   const line = `[${timestamp}] [SERVICE] ${message}`;
   console.log(line);
   try {
@@ -79,7 +79,7 @@ const job = schedule.scheduleJob(cronExpr, async () => {
 if (job) {
   const next = job.nextInvocation();
   if (next) {
-    log(cfg, `Prochaine sync : ${next.toISOString()}`);
+    log(cfg, `Prochaine sync : ${next.toLocaleString("fr-FR", { timeZone: "Europe/Paris", hour12: false })}`);
   }
 }
 

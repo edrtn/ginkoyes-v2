@@ -16,7 +16,7 @@ const svc = new Service({
   name: "GinkoyesSync",
   description: "Ginkoyes V2 - Synchronisation nightly Ginkoia vers MariaDB",
   script: servicePath,
-  nodeOptions: ["--max-old-space-size=512"],
+  nodeOptions: ["--max-old-space-size=4096"],
   // Restart on failure
   wait: 2,
   grow: 0.5,

@@ -263,7 +263,7 @@ function registerIpcHandlers(): void {
   // 5. get-service-status : sc query GinkoyesSync
   ipcMain.handle('get-service-status', async () => {
     return new Promise((resolve) => {
-      execFile('sc', ['query', 'GinkoyesSync'], (err, stdout, stderr) => {
+      execFile('sc', ['query', 'ginkoyessync.exe'], (err, stdout, stderr) => {
         if (err) {
           resolve({ running: false, output: stderr || err.message });
           return;
