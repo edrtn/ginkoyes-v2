@@ -33,6 +33,11 @@ interface TestResult {
   error?: string;
 }
 
+interface ServerResult {
+  ip: string;
+  articleCount: number;
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type ElectronAPI = Record<string, (...args: any[]) => Promise<any>>;
 
@@ -64,11 +69,11 @@ const defaultVpnConfig: VpnConfig = {
 // ============================================================
 
 const inputCls =
-  "block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500";
+  "block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-slate-400 focus:ring-1 focus:ring-slate-400";
 const btnPrimary =
-  "rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50";
+  "rounded-lg bg-slate-700 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50";
 const btnSmall =
-  "shrink-0 rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50";
+  "shrink-0 rounded-lg bg-slate-700 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50";
 
 // ============================================================
 // Component
@@ -83,6 +88,12 @@ export default function SettingsPage() {
   const [testingTailscale, setTestingTailscale] = useState(false);
   const [saved, setSaved] = useState(false);
   const [isElectron, setIsElectron] = useState(false);
+
+  // --- Scan state ---
+  const [scanning, setScanning] = useState(false);
+  const [scanServers, setScanServers] = useState<ServerResult[]>([]);
+  const [scanDone, setScanDone] = useState(false);
+  const [scanError, setScanError] = useState("");
 
   // --- VPN state ---
   const [vpnConfig, setVpnConfig] = useState<VpnConfig>(defaultVpnConfig);
@@ -153,6 +164,33 @@ export default function SettingsPage() {
     } finally {
       setTesting(false);
     }
+  }
+
+  async function handleScan() {
+    const api = getApi();
+    if (!api) return;
+    setScanning(true);
+    setScanDone(false);
+    setScanError("");
+    setScanServers([]);
+    try {
+      const result = await api.scanNetwork();
+      if (result.success) {
+        setScanServers(result.servers);
+      } else {
+        setScanError(result.error || "Erreur inconnue");
+      }
+    } catch (err) {
+      setScanError(String(err));
+    } finally {
+      setScanning(false);
+      setScanDone(true);
+    }
+  }
+
+  function handleSelectScannedServer(ip: string) {
+    setConfig((prev) => ({ ...prev, lanHost: ip }));
+    setSaved(false);
   }
 
   async function handleSave() {
@@ -342,6 +380,57 @@ export default function SettingsPage() {
             </div>
           </div>
 
+          {/* Network scan */}
+          <div className="rounded-lg border border-gray-100 bg-gray-50 p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-medium text-gray-700">Recherche automatique</h3>
+                <p className="text-xs text-gray-500">Scanner le reseau local pour trouver un serveur MariaDB</p>
+              </div>
+              <button
+                onClick={handleScan}
+                disabled={!isElectron || scanning}
+                className={btnSmall}
+              >
+                {scanning ? "Scan..." : "Scanner le reseau"}
+              </button>
+            </div>
+
+            {scanning && (
+              <div className="mt-3 flex items-center gap-2 text-sm text-slate-600">
+                <div className="h-4 w-4 animate-spin rounded-full border-2 border-slate-600 border-t-transparent" />
+                Recherche en cours...
+              </div>
+            )}
+
+            {scanDone && !scanning && (
+              <div className="mt-3">
+                {scanServers.length > 0 ? (
+                  <div className="space-y-1.5">
+                    {scanServers.map((s) => (
+                      <button
+                        key={s.ip}
+                        onClick={() => handleSelectScannedServer(s.ip)}
+                        className={`flex w-full items-center justify-between rounded-lg border p-2.5 text-left text-sm transition-colors ${
+                          config.lanHost === s.ip
+                            ? "border-slate-400 bg-slate-50"
+                            : "border-gray-200 hover:bg-white"
+                        }`}
+                      >
+                        <span className="font-medium text-gray-900">{s.ip}</span>
+                        <span className="text-xs text-gray-500">{s.articleCount.toLocaleString()} articles</span>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-amber-700">
+                    Aucun serveur trouve.{scanError ? ` ${scanError}` : ""}
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+
           {/* Port / User / Password */}
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-3">
             <div>
@@ -420,8 +509,8 @@ export default function SettingsPage() {
 
         <div className="space-y-6 p-6">
           {/* Info box */}
-          <div className="rounded-lg border border-blue-200 bg-blue-50 p-4">
-            <p className="text-sm text-blue-800">
+          <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-4">
+            <p className="text-sm text-zinc-700">
               La configuration VPN est recuperee automatiquement depuis la base de donnees
               du serveur lors d&apos;une connexion en reseau local. Vous pouvez aussi la rafraichir
               manuellement.
@@ -460,7 +549,7 @@ export default function SettingsPage() {
               onClick={() => handleVpnToggle(!vpnConfig.enabled)}
               disabled={!isElectron || !vpnConfig.authKey}
               className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out disabled:cursor-not-allowed disabled:opacity-50 ${
-                vpnConfig.enabled ? "bg-indigo-600" : "bg-gray-200"
+                vpnConfig.enabled ? "bg-slate-700" : "bg-gray-200"
               }`}
             >
               <span

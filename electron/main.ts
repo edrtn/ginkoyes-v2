@@ -1,5 +1,7 @@
 import { app, BrowserWindow, ipcMain, Menu } from "electron";
 import path from "path";
+import net from "net";
+import os from "os";
 import mysql from "mysql2/promise";
 import store, { DbConfig, VpnConfig } from "./store";
 import { startNextServer, stopNextServer } from "./server";
@@ -208,6 +210,141 @@ function setupIpcHandlers() {
       };
     }
   });
+
+  // --- Configured flag ---
+
+  ipcMain.handle("get-configured", () => {
+    return store.get("configured");
+  });
+
+  ipcMain.handle("set-configured", (_event, value: boolean) => {
+    store.set("configured", value);
+    return { success: true };
+  });
+
+  // --- Network scan ---
+
+  ipcMain.handle("scan-network", async () => {
+    try {
+      const subnet = getLocalSubnet();
+      if (!subnet) {
+        return { success: false, error: "Impossible de determiner le sous-reseau local", servers: [] };
+      }
+
+      // Scan all IPs on port 3306
+      const hostsWithPort = await scanSubnetForPort(subnet, 3306, 300);
+
+      // Test MariaDB connection on each host
+      const db = store.get("db");
+      const servers: Array<{ ip: string; articleCount: number }> = [];
+
+      for (const ip of hostsWithPort) {
+        try {
+          const conn = await mysql.createConnection({
+            host: ip,
+            port: db.port || 3306,
+            user: db.user || "ginkoyes",
+            password: db.password || "ginkoyes",
+            database: db.database || "ginkoyes",
+            connectTimeout: 3000,
+          });
+          const [rows] = await conn.execute("SELECT COUNT(*) AS count FROM ARTARTICLE");
+          const count = (rows as Array<{ count: number }>)[0]?.count ?? 0;
+          await conn.end();
+          servers.push({ ip, articleCount: count });
+        } catch {
+          // Port open but not a valid ginkoyes MariaDB — skip
+        }
+      }
+
+      return { success: true, subnet, servers };
+    } catch (err) {
+      return {
+        success: false,
+        error: err instanceof Error ? err.message : String(err),
+        servers: [],
+      };
+    }
+  });
+
+  // --- Restart Next.js server (after config change) ---
+
+  ipcMain.handle("restart-server", async () => {
+    try {
+      stopNextServer();
+      const dbEnv = getDbEnvVars();
+      serverPort = await startNextServer(dbEnv);
+      if (mainWindow) {
+        mainWindow.loadURL(`http://127.0.0.1:${serverPort}`);
+      }
+      return { success: true };
+    } catch (err) {
+      return {
+        success: false,
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
+  });
+}
+
+// ============================================================
+// Network scanning utilities
+// ============================================================
+
+function getLocalSubnet(): string | null {
+  const interfaces = os.networkInterfaces();
+  for (const name of Object.keys(interfaces)) {
+    const addrs = interfaces[name];
+    if (!addrs) continue;
+    for (const addr of addrs) {
+      if (addr.family === "IPv4" && !addr.internal) {
+        // Extract subnet base (e.g., 192.168.68)
+        const parts = addr.address.split(".");
+        return `${parts[0]}.${parts[1]}.${parts[2]}`;
+      }
+    }
+  }
+  return null;
+}
+
+function checkPort(host: string, port: number, timeout: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = new net.Socket();
+    socket.setTimeout(timeout);
+    socket.on("connect", () => {
+      socket.destroy();
+      resolve(true);
+    });
+    socket.on("timeout", () => {
+      socket.destroy();
+      resolve(false);
+    });
+    socket.on("error", () => {
+      socket.destroy();
+      resolve(false);
+    });
+    socket.connect(port, host);
+  });
+}
+
+async function scanSubnetForPort(subnet: string, port: number, timeout: number): Promise<string[]> {
+  const results: string[] = [];
+  // Scan in batches of 50 to avoid too many concurrent sockets
+  const batchSize = 50;
+  for (let start = 1; start <= 254; start += batchSize) {
+    const end = Math.min(start + batchSize - 1, 254);
+    const batch: Promise<void>[] = [];
+    for (let i = start; i <= end; i++) {
+      const ip = `${subnet}.${i}`;
+      batch.push(
+        checkPort(ip, port, timeout).then((open) => {
+          if (open) results.push(ip);
+        })
+      );
+    }
+    await Promise.all(batch);
+  }
+  return results;
 }
 
 // ============================================================

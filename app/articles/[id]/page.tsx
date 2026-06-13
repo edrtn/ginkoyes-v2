@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, use } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -55,6 +56,7 @@ interface Vente {
 }
 
 interface Reception {
+  BRE_ID: number;
   BRE_DATE: string;
   BRE_NUMERO: string;
   BRE_NUMFOURN: string;
@@ -175,6 +177,7 @@ export default function ArticleDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
+  const router = useRouter();
   const [article, setArticle] = useState<ArticleDetail | null>(null);
   const [ventes, setVentes] = useState<Vente[]>([]);
   const [receptions, setReceptions] = useState<Reception[]>([]);
@@ -220,7 +223,7 @@ export default function ArticleDetailPage({
     return (
       <div className="flex items-center justify-center py-20">
         <div className="space-y-3 text-center">
-          <div className="mx-auto h-8 w-8 animate-spin rounded-full border-4 border-indigo-200 border-t-indigo-600" />
+          <div className="mx-auto h-8 w-8 animate-spin rounded-full border-4 border-sky-200 border-t-sky-600" />
           <p className="text-sm text-gray-500">Chargement de la fiche...</p>
         </div>
       </div>
@@ -230,9 +233,9 @@ export default function ArticleDetailPage({
   if (error || !article) {
     return (
       <div className="space-y-4">
-        <Link href="/articles" className="text-sm text-indigo-600 hover:underline">
-          &larr; Retour aux articles
-        </Link>
+        <button onClick={() => router.back()} className="text-sm text-sky-600 hover:underline">
+          &larr; Retour
+        </button>
         <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-red-700">
           {error || "Article non trouv\u00e9"}
         </div>
@@ -255,12 +258,12 @@ export default function ArticleDetailPage({
   return (
     <div className="space-y-6">
       {/* Back link */}
-      <Link href="/articles" className="inline-flex items-center gap-1 text-sm text-indigo-600 hover:text-indigo-800 transition-colors">
+      <button onClick={() => router.back()} className="inline-flex items-center gap-1 text-sm text-sky-600 hover:text-sky-800 transition-colors">
         <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
         </svg>
-        Retour aux articles
-      </Link>
+        Retour
+      </button>
 
       {/* ===== HERO SECTION ===== */}
       <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
@@ -284,7 +287,7 @@ export default function ArticleDetailPage({
               {article.MARQUE && (
                 <Link
                   href={`/marques/${encodeURIComponent(article.MARQUE)}`}
-                  className="rounded-full bg-indigo-100 px-3 py-0.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-200 transition-colors"
+                  className="rounded-full bg-sky-100 px-3 py-0.5 text-xs font-semibold text-sky-700 hover:bg-sky-200 transition-colors"
                 >
                   {article.MARQUE}
                 </Link>
@@ -313,7 +316,7 @@ export default function ArticleDetailPage({
             {article.collections.length > 0 && (
               <div className="mt-3 flex flex-wrap gap-1.5">
                 {article.collections.map((c, i) => (
-                  <Badge key={i} variant="outline" className="border-indigo-200 bg-indigo-50 text-indigo-700 text-xs">
+                  <Badge key={i} variant="outline" className="border-sky-200 bg-sky-50 text-sky-700 text-xs">
                     {c}
                   </Badge>
                 ))}
@@ -343,7 +346,7 @@ export default function ArticleDetailPage({
 
         <Card className="border-0 shadow-sm">
           <CardContent className="pt-5 pb-4 flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-100 text-blue-600 flex-shrink-0">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600 flex-shrink-0">
               <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m-3-2.818.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
               </svg>
@@ -357,7 +360,7 @@ export default function ArticleDetailPage({
 
         <Card className="border-0 shadow-sm">
           <CardContent className="pt-5 pb-4 flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-violet-100 text-violet-600 flex-shrink-0">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600 flex-shrink-0">
               <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 0 1 3 19.875v-6.75ZM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V8.625ZM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V4.125Z" />
               </svg>
@@ -448,7 +451,7 @@ export default function ArticleDetailPage({
                   <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-400">Saisons</p>
                   <div className="flex flex-wrap gap-1.5">
                     {article.collections.map((c, i) => (
-                      <Badge key={i} variant="outline" className="border-indigo-200 bg-indigo-50 text-indigo-700 text-xs">
+                      <Badge key={i} variant="outline" className="border-sky-200 bg-sky-50 text-sky-700 text-xs">
                         {c}
                       </Badge>
                     ))}
@@ -487,7 +490,7 @@ export default function ArticleDetailPage({
                 <Card key={color} className="border-0 shadow-sm overflow-hidden">
                   <div className="flex items-center justify-between border-b bg-gray-50/50 px-5 py-3">
                     <div className="flex items-center gap-3">
-                      <div className="h-3 w-3 rounded-full bg-gradient-to-br from-indigo-400 to-violet-500" />
+                      <div className="h-3 w-3 rounded-full bg-zinc-400" />
                       <span className="text-sm font-semibold text-gray-800">{color}</span>
                     </div>
                     <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${
@@ -517,12 +520,12 @@ export default function ArticleDetailPage({
                             key={taille}
                             className={`flex flex-col items-center rounded-lg border px-3 py-2 text-center transition-all ${
                               info.qte > 0
-                                ? "border-indigo-200 bg-indigo-50/50"
+                                ? "border-sky-200 bg-sky-50/50"
                                 : "border-gray-100 bg-gray-50 opacity-50"
                             }`}
                           >
                             <span className="text-xs text-gray-500">{taille}</span>
-                            <span className={`text-sm font-bold ${info.qte > 0 ? "text-indigo-700" : "text-gray-300"}`}>
+                            <span className={`text-sm font-bold ${info.qte > 0 ? "text-sky-700" : "text-gray-300"}`}>
                               {info.qte}
                             </span>
                             {info.pump != null && info.pump > 0 && (
@@ -571,7 +574,7 @@ export default function ArticleDetailPage({
               <CardContent className="pt-6">
                 {ventesLoading ? (
                   <div className="py-10 text-center">
-                    <div className="mx-auto h-6 w-6 animate-spin rounded-full border-2 border-indigo-200 border-t-indigo-600" />
+                    <div className="mx-auto h-6 w-6 animate-spin rounded-full border-2 border-sky-200 border-t-sky-600" />
                   </div>
                 ) : ventes.length === 0 ? (
                   <p className="py-8 text-center text-gray-400">{"Aucune vente trouvée."}</p>
@@ -598,10 +601,10 @@ export default function ArticleDetailPage({
                             <TableCell>
                               <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${
                                 v.SOURCE === "CAISSE"
-                                  ? "bg-blue-100 text-blue-700"
+                                  ? "bg-zinc-100 text-zinc-700"
                                   : v.SOURCE === "WEB"
                                   ? "bg-green-100 text-green-700"
-                                  : "bg-purple-100 text-purple-700"
+                                  : "bg-zinc-50 text-zinc-600"
                               }`}>
                                 {v.SOURCE}
                               </span>
@@ -610,7 +613,7 @@ export default function ArticleDetailPage({
                             <TableCell>
                               {v.COULEUR ? (
                                 <span className="inline-flex items-center gap-1.5">
-                                  <span className="h-2 w-2 rounded-full bg-indigo-400" />
+                                  <span className="h-2 w-2 rounded-full bg-zinc-400" />
                                   <span className="text-sm">{v.COULEUR}</span>
                                 </span>
                               ) : "-"}
@@ -647,7 +650,7 @@ export default function ArticleDetailPage({
               <CardContent className="pt-6">
                 {recsLoading ? (
                   <div className="py-10 text-center">
-                    <div className="mx-auto h-6 w-6 animate-spin rounded-full border-2 border-indigo-200 border-t-indigo-600" />
+                    <div className="mx-auto h-6 w-6 animate-spin rounded-full border-2 border-sky-200 border-t-sky-600" />
                   </div>
                 ) : receptions.length === 0 ? (
                   <p className="py-8 text-center text-gray-400">{"Aucune réception trouvée."}</p>
@@ -670,7 +673,11 @@ export default function ArticleDetailPage({
                         {receptions.map((r, i) => (
                           <TableRow key={i} className="border-gray-50 hover:bg-gray-50/50 transition-colors">
                             <TableCell className="text-sm">{formatDate(r.BRE_DATE)}</TableCell>
-                            <TableCell className="font-mono text-xs text-gray-500">{r.BRE_NUMERO}</TableCell>
+                            <TableCell className="font-mono text-xs">
+                              <Link href={`/receptions/${r.BRE_ID}`} className="text-sky-600 hover:text-sky-800 hover:underline">
+                                {r.BRE_NUMERO}
+                              </Link>
+                            </TableCell>
                             <TableCell>
                               <div className="text-sm font-medium">{r.FOU_NOM || "-"}</div>
                               {r.BRE_NUMFOURN && (
@@ -680,7 +687,7 @@ export default function ArticleDetailPage({
                             <TableCell>
                               {r.COULEUR ? (
                                 <span className="inline-flex items-center gap-1.5">
-                                  <span className="h-2 w-2 rounded-full bg-violet-400" />
+                                  <span className="h-2 w-2 rounded-full bg-zinc-400" />
                                   <span className="text-sm">{r.COULEUR}</span>
                                 </span>
                               ) : "-"}

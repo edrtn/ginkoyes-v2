@@ -12,7 +12,6 @@ interface TauxSortieRow {
   FAMILLE: string | null;
   SOUS_FAMILLE: string | null;
   COULEUR: string | null;
-  QTE_COMMANDEE: number;
   QTE_RECUE: number;
   QTE_VENDUE: number;
   MONTANT_ACHAT_NET: number;
@@ -24,34 +23,38 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const collectionId = searchParams.get("collectionId");
     const marque = searchParams.get("marque");
+    const from = searchParams.get("from");
+    const to = searchParams.get("to");
 
-    if (!collectionId || !marque) {
+    if (!collectionId || !marque || !from || !to) {
       return NextResponse.json(
-        { error: "Paramètres collectionId et marque requis" },
+        { error: "Paramètres collectionId, marque, from et to requis" },
         { status: 400 }
       );
     }
 
     const colId = Number(collectionId);
     const m = marque.toUpperCase();
-    const cacheKey = `achat-taux:${colId}:${m}`;
+    const cacheKey = `achat-taux:${colId}:${m}:${from}:${to}`;
 
     const result = await cached(cacheKey, async () => {
+      // Params: collectionId, collectionId, fromDate, toDate, fromDate, toDate, marque
       const rows = await query<TauxSortieRow>(ACHAT_TAUX_SORTIE, [
         colId,
         colId,
+        from,
+        to,
+        from,
+        to,
         m,
       ]);
 
-      let totalQteCommandee = 0;
       let totalQteRecue = 0;
       let totalQteVendue = 0;
 
       const articles = rows.map((r) => {
-        const qteCommandee = Number(r.QTE_COMMANDEE) || 0;
         const qteRecue = Number(r.QTE_RECUE) || 0;
         const qteVendue = Number(r.QTE_VENDUE) || 0;
-        totalQteCommandee += qteCommandee;
         totalQteRecue += qteRecue;
         totalQteVendue += qteVendue;
 
@@ -64,10 +67,9 @@ export async function GET(request: NextRequest) {
           rayon: r.RAYON || "",
           famille: r.FAMILLE || "",
           sousFamille: r.SOUS_FAMILLE || "",
-          qteCommandee,
           qteRecue,
           qteVendue,
-          tauxSortie: qteCommandee > 0 ? (qteVendue / qteCommandee) * 100 : 0,
+          tauxSortie: qteRecue > 0 ? (qteVendue / qteRecue) * 100 : 0,
           montantAchatNet: Number(r.MONTANT_ACHAT_NET) || 0,
           pxVente: Number(r.PX_VENTE_UNITAIRE) || 0,
         };
@@ -76,11 +78,10 @@ export async function GET(request: NextRequest) {
       return {
         articles,
         totaux: {
-          qteCommandee: totalQteCommandee,
           qteRecue: totalQteRecue,
           qteVendue: totalQteVendue,
           tauxSortieMoyen:
-            totalQteCommandee > 0 ? (totalQteVendue / totalQteCommandee) * 100 : 0,
+            totalQteRecue > 0 ? (totalQteVendue / totalQteRecue) * 100 : 0,
         },
       };
     }, TTL.DEFAULT);

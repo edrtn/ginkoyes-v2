@@ -30,4 +30,11 @@ contextBridge.exposeInMainWorld("electronAPI", {
   vpnStop: () => ipcRenderer.invoke("vpn-stop"),
   vpnStatus: () => ipcRenderer.invoke("vpn-status"),
   vpnRefreshFromDb: () => ipcRenderer.invoke("vpn-refresh-from-db"),
+
+  // Network scan & setup
+  scanNetwork: () => ipcRenderer.invoke("scan-network"),
+  getConfigured: () => ipcRenderer.invoke("get-configured"),
+  setConfigured: (value: boolean) =>
+    ipcRenderer.invoke("set-configured", value),
+  restartServer: () => ipcRenderer.invoke("restart-server"),
 });

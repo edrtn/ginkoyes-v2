@@ -7,8 +7,8 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-inter);
+  --font-mono: var(--font-mono);
   --font-heading: var(--font-sans);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
@@ -109,13 +109,53 @@
   --chart-5: oklch(0.269 0 0);
   --sidebar: oklch(0.205 0 0);
   --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary: oklch(0.488 0 0);
   --sidebar-primary-foreground: oklch(0.985 0 0);
   --sidebar-accent: oklch(0.269 0 0);
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
 }
+
+/* Mesh gradient background animé */
+.bg-mesh {
+  background:
+    radial-gradient(ellipse at 20% 50%, rgba(139,92,246,0.08) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 20%, rgba(14,165,233,0.06) 0%, transparent 50%),
+    radial-gradient(ellipse at 50% 80%, rgba(244,63,94,0.05) 0%, transparent 50%),
+    #fafafa;
+  min-height: 100vh;
+}
+
+/* Glass card */
+.glass-card {
+  background: rgba(255,255,255,0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255,255,255,0.5);
+}
+
+/* Glow shadows par couleur */
+.glow-violet { box-shadow: 0 8px 32px -8px rgba(139,92,246,0.3); }
+.glow-sky { box-shadow: 0 8px 32px -8px rgba(14,165,233,0.3); }
+.glow-rose { box-shadow: 0 8px 32px -8px rgba(244,63,94,0.3); }
+.glow-amber { box-shadow: 0 8px 32px -8px rgba(245,158,11,0.3); }
+.glow-teal { box-shadow: 0 8px 32px -8px rgba(20,184,166,0.3); }
+.glow-indigo { box-shadow: 0 8px 32px -8px rgba(99,102,241,0.3); }
+.glow-emerald { box-shadow: 0 8px 32px -8px rgba(16,185,129,0.3); }
+
+/* Fade-in animation */
+@keyframes fade-in-up {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-in-up {
+  animation: fade-in-up 0.5s ease-out both;
+}
+.stagger-1 { animation-delay: 0.05s; }
+.stagger-2 { animation-delay: 0.1s; }
+.stagger-3 { animation-delay: 0.15s; }
+.stagger-4 { animation-delay: 0.2s; }
 
 @layer base {
   * {

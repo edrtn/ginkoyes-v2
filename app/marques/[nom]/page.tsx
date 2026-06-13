@@ -46,6 +46,23 @@ interface Vente {
   PXNET: number;
 }
 
+interface OrderHistoryRow {
+  colId: number;
+  saison: string;
+  dateCmdMin: string | null;
+  dateCmdMax: string | null;
+  qteCommandee: number;
+  montantAchatNet: number;
+  qteRecue: number;
+  qteVendue: number;
+  qteVenduTotal: number;
+  caTtc: number;
+  derniereVente: string | null;
+  qteStock: number;
+  fournisseur: string;
+  seasonTo: string | null;
+}
+
 interface PeriodData {
   total: { caTtc: number; caHt: number; qte: number; marge: number; prixMoyen: number };
   parGenre: { genre: string; caTtc: number; caHt: number; qte: number; marge: number; prixMoyen: number }[];
@@ -84,7 +101,8 @@ export default function MarquePage({
   params: Promise<{ nom: string }>;
 }) {
   const { nom } = use(params);
-  const marque = decodeURIComponent(nom);
+  let marque: string;
+  try { marque = decodeURIComponent(nom); } catch { marque = nom; }
 
   const [stats, setStats] = useState<BrandStats | null>(null);
   const [articles, setArticles] = useState<BrandArticle[]>([]);
@@ -102,6 +120,11 @@ export default function MarquePage({
   const [performance, setPerformance] = useState<Performance | null>(null);
   const [perfLoading, setPerfLoading] = useState(false);
   const [perfFetched, setPerfFetched] = useState(false);
+
+  // Historique commandes (lazy)
+  const [orderHistory, setOrderHistory] = useState<OrderHistoryRow[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyFetched, setHistoryFetched] = useState(false);
 
   // Initial load: stats + articles
   useEffect(() => {
@@ -136,7 +159,15 @@ export default function MarquePage({
         .catch(console.error)
         .finally(() => { setPerfLoading(false); setPerfFetched(true); });
     }
-  }, [activeTab, marque, ventesFetched, ventesLoading, perfFetched, perfLoading]);
+    if (activeTab === "historique" && !historyFetched && !historyLoading) {
+      setHistoryLoading(true);
+      fetch(`/api/pilotage/order-history?marque=${encodeURIComponent(marque)}`)
+        .then((r) => r.json())
+        .then((data: OrderHistoryRow[]) => setOrderHistory(Array.isArray(data) ? data : []))
+        .catch(console.error)
+        .finally(() => { setHistoryLoading(false); setHistoryFetched(true); });
+    }
+  }, [activeTab, marque, ventesFetched, ventesLoading, perfFetched, perfLoading, historyFetched, historyLoading]);
 
   // ── Loading / Error ───────────────────────────────────
 
@@ -207,7 +238,7 @@ export default function MarquePage({
       <div className="grid gap-4 grid-cols-2 sm:grid-cols-4">
         <Card className="border-0 shadow-sm">
           <CardContent className="pt-5 pb-4 flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-100 text-indigo-600 flex-shrink-0">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600 flex-shrink-0">
               <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125Z" />
               </svg>
@@ -221,7 +252,7 @@ export default function MarquePage({
 
         <Card className="border-0 shadow-sm">
           <CardContent className="pt-5 pb-4 flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-100 text-emerald-600 flex-shrink-0">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600 flex-shrink-0">
               <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" d="m20.25 7.5-.625 10.632a2.25 2.25 0 0 1-2.247 2.118H6.622a2.25 2.25 0 0 1-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125Z" />
               </svg>
@@ -237,7 +268,7 @@ export default function MarquePage({
 
         <Card className="border-0 shadow-sm">
           <CardContent className="pt-5 pb-4 flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-100 text-blue-600 flex-shrink-0">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600 flex-shrink-0">
               <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m-3-2.818.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
               </svg>
@@ -251,7 +282,7 @@ export default function MarquePage({
 
         <Card className="border-0 shadow-sm">
           <CardContent className="pt-5 pb-4 flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-violet-100 text-violet-600 flex-shrink-0">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600 flex-shrink-0">
               <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 0 1 3 19.875v-6.75ZM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V8.625ZM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V4.125Z" />
               </svg>
@@ -275,6 +306,9 @@ export default function MarquePage({
           </TabsTrigger>
           <TabsTrigger value="performance" className="data-[state=active]:bg-white data-[state=active]:shadow-sm">
             Performance
+          </TabsTrigger>
+          <TabsTrigger value="historique" className="data-[state=active]:bg-white data-[state=active]:shadow-sm">
+            Historique commandes
           </TabsTrigger>
         </TabsList>
 
@@ -386,7 +420,7 @@ export default function MarquePage({
                           <TableCell>
                             {v.COULEUR ? (
                               <span className="inline-flex items-center gap-1.5">
-                                <span className="h-2 w-2 rounded-full bg-indigo-400" />
+                                <span className="h-2 w-2 rounded-full bg-zinc-400" />
                                 <span className="text-sm">{v.COULEUR}</span>
                               </span>
                             ) : "-"}
@@ -530,6 +564,134 @@ export default function MarquePage({
                           })()}
                         </TableBody>
                       </Table>
+                    </div>
+                  </CardContent>
+                </Card>
+              </>
+            )}
+          </div>
+        </TabsContent>
+
+        {/* ── Tab Historique commandes ─────────────────────── */}
+        <TabsContent value="historique" className="mt-4">
+          <div className="space-y-4">
+            {historyLoading ? (
+              <div className="py-10 text-center">
+                <div className="mx-auto h-6 w-6 animate-spin rounded-full border-2 border-indigo-200 border-t-indigo-600" />
+              </div>
+            ) : orderHistory.length === 0 ? (
+              <Card className="border-0 shadow-sm">
+                <CardContent className="py-8 text-center text-gray-400">
+                  {"Aucun historique de commande trouvé."}
+                </CardContent>
+              </Card>
+            ) : (
+              <>
+                <Card className="border-0 shadow-sm bg-indigo-50/50">
+                  <CardContent className="p-5 space-y-2">
+                    <h3 className="text-sm font-bold text-gray-900">Historique des commandes par saison</h3>
+                    <p className="text-sm text-gray-600 leading-relaxed">
+                      Ce tableau retrace l&apos;historique complet des commandes pass{"é"}es chez <strong className="text-gray-800">{marque}</strong>, saison par saison.
+                      Pour chaque saison, vous pouvez voir les quantit{"é"}s command{"é"}es et r{"é"}ceptionn{"é"}es, le chiffre d&apos;affaires g{"é"}n{"é"}r{"é"}, et le statut de la saison.
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs text-gray-600">
+                      <div className="flex gap-2 items-start">
+                        <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold bg-blue-100 text-blue-700 shrink-0">En commande</span>
+                        <span>Command{"é"}, pas encore r{"é"}ceptionn{"é"}</span>
+                      </div>
+                      <div className="flex gap-2 items-start">
+                        <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold bg-amber-100 text-amber-700 shrink-0">En cours</span>
+                        <span>P{"é"}riode de vente en cours</span>
+                      </div>
+                      <div className="flex gap-2 items-start">
+                        <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold bg-emerald-100 text-emerald-700 shrink-0">Termin{"é"}</span>
+                        <span>P{"é"}riode de vente termin{"é"}e (PE=jan-jul, AH=jul-jan)</span>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card className="border-0 shadow-sm">
+                  <CardContent className="pt-6">
+                    <div className="overflow-x-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow className="border-gray-100">
+                            <TableHead className="text-xs uppercase tracking-wider text-gray-400">Saison</TableHead>
+                            <TableHead className="text-xs uppercase tracking-wider text-gray-400">Fournisseur</TableHead>
+                            <TableHead className="text-xs uppercase tracking-wider text-gray-400">Date commande</TableHead>
+                            <TableHead className="text-right text-xs uppercase tracking-wider text-gray-400">{"Command\u00e9"}</TableHead>
+                            <TableHead className="text-right text-xs uppercase tracking-wider text-gray-400">{"Re\u00e7u"}</TableHead>
+                            <TableHead className="text-right text-xs uppercase tracking-wider text-gray-400">Achat net</TableHead>
+                            <TableHead className="text-right text-xs uppercase tracking-wider text-gray-400">CA TTC</TableHead>
+                            <TableHead className="text-right text-xs uppercase tracking-wider text-gray-400">Vendu saison</TableHead>
+                            <TableHead className="text-right text-xs uppercase tracking-wider text-gray-400">Vendu hors</TableHead>
+                            <TableHead className="text-right text-xs uppercase tracking-wider text-gray-400">Stock</TableHead>
+                            <TableHead className="text-center text-xs uppercase tracking-wider text-gray-400">Statut</TableHead>
+                            <TableHead className="text-right text-xs uppercase tracking-wider text-gray-400">Taux sortie</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {orderHistory.map((oh) => {
+                            const today = new Date();
+                            const seasonEnd = oh.seasonTo ? new Date(oh.seasonTo) : null;
+
+                            let statut: "En commande" | "En cours" | "Terminé";
+                            if (oh.qteRecue === 0 && oh.qteCommandee > 0) {
+                              statut = "En commande";
+                            } else if (seasonEnd && seasonEnd > today) {
+                              statut = "En cours";
+                            } else {
+                              statut = "Terminé";
+                            }
+
+                            const tauxSortie = oh.qteRecue > 0 ? ((oh.qteRecue - oh.qteStock) / oh.qteRecue) * 100 : 0;
+
+                            return (
+                              <TableRow key={oh.colId} className="border-gray-50 hover:bg-gray-50/50 transition-colors">
+                                <TableCell className="font-medium text-gray-900 whitespace-nowrap">{oh.saison}</TableCell>
+                                <TableCell className="text-sm text-gray-500 max-w-[150px] truncate">{oh.fournisseur || "-"}</TableCell>
+                                <TableCell className="text-sm text-gray-500 whitespace-nowrap">
+                                  {oh.dateCmdMin ? formatDate(oh.dateCmdMin) : "-"}
+                                  {oh.dateCmdMax && oh.dateCmdMax !== oh.dateCmdMin ? ` \u2192 ${formatDate(oh.dateCmdMax)}` : ""}
+                                </TableCell>
+                                <TableCell className="text-right tabular-nums">{oh.qteCommandee}</TableCell>
+                                <TableCell className="text-right tabular-nums">{oh.qteRecue}</TableCell>
+                                <TableCell className="text-right tabular-nums">{formatEuro(oh.montantAchatNet)}</TableCell>
+                                <TableCell className="text-right tabular-nums font-semibold">{formatEuro(oh.caTtc)}</TableCell>
+                                <TableCell className="text-right tabular-nums">{oh.qteVendue}</TableCell>
+                                <TableCell className="text-right tabular-nums text-gray-400">{oh.qteVenduTotal - oh.qteVendue > 0 ? oh.qteVenduTotal - oh.qteVendue : "-"}</TableCell>
+                                <TableCell className="text-right tabular-nums">{oh.qteStock}</TableCell>
+                                <TableCell className="text-center">
+                                  <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                                    statut === "En commande" ? "bg-blue-100 text-blue-700" :
+                                    statut === "En cours" ? "bg-amber-100 text-amber-700" :
+                                    "bg-emerald-100 text-emerald-700"
+                                  }`}>
+                                    {statut}
+                                  </span>
+                                </TableCell>
+                                <TableCell className="text-right">
+                                  {statut === "Terminé" && oh.qteRecue > 0 ? (
+                                    <span className={`font-semibold ${
+                                      tauxSortie >= 70 ? "text-emerald-600" :
+                                      tauxSortie >= 40 ? "text-amber-600" :
+                                      "text-red-600"
+                                    }`}>
+                                      {tauxSortie.toFixed(1)}%
+                                    </span>
+                                  ) : (
+                                    <span className="text-gray-300">-</span>
+                                  )}
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
+                        </TableBody>
+                      </Table>
+                      <div className="mt-3 border-t border-gray-100 pt-3 text-xs text-gray-400">
+                        {orderHistory.length} saison{orderHistory.length > 1 ? "s" : ""}
+                      </div>
                     </div>
                   </CardContent>
                 </Card>

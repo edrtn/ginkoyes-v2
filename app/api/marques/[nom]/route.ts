@@ -9,7 +9,8 @@ export async function GET(
 ) {
   try {
     const { nom } = await params;
-    const marque = decodeURIComponent(nom);
+    let marque: string;
+    try { marque = decodeURIComponent(nom); } catch { marque = nom; }
 
     const result = await cached(`marque:${marque.toUpperCase()}`, async () => {
       const [stats, articles] = await Promise.all([

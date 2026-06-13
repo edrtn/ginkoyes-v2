@@ -17,11 +17,12 @@ export interface VpnConfig {
 export interface AppConfig {
   db: DbConfig;
   vpn: VpnConfig;
+  configured: boolean;
 }
 
 const defaults: AppConfig = {
   db: {
-    lanHost: "127.0.0.1",
+    lanHost: "",
     tailscaleHost: "",
     port: 3306,
     user: "ginkoyes",
@@ -32,6 +33,7 @@ const defaults: AppConfig = {
     authKey: "",
     enabled: false,
   },
+  configured: false,
 };
 
 const store = new Store<AppConfig>({ defaults });

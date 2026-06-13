@@ -101,7 +101,7 @@ export default function DashboardPage() {
               onClick={() => handlePreset(i)}
               className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-all ${
                 activePreset === i
-                  ? "bg-indigo-600 text-white shadow-md shadow-indigo-200"
+                  ? "bg-violet-600 text-white shadow-md shadow-violet-200"
                   : "bg-white text-gray-600 hover:bg-gray-100 border border-gray-200"
               }`}
             >
@@ -135,23 +135,23 @@ export default function DashboardPage() {
         <>
           {/* KPIs */}
           <div className="grid gap-4 sm:grid-cols-3">
-            <Card className="relative overflow-hidden border-0 bg-gradient-to-br from-indigo-500 to-indigo-600 text-white shadow-lg shadow-indigo-200">
+            <Card className="relative overflow-hidden border-0 bg-gradient-to-br from-violet-500 to-violet-600 text-white shadow-lg glow-violet animate-fade-in-up stagger-1">
               <CardContent className="pt-6">
-                <p className="text-sm font-medium text-indigo-100">Chiffre d&apos;affaires</p>
+                <p className="text-sm font-medium text-violet-100">Chiffre d&apos;affaires</p>
                 <p className="mt-1 text-3xl font-bold tracking-tight">{formatEuro(data.caTotal)}</p>
                 <div className="absolute -right-4 -top-4 h-24 w-24 rounded-full bg-white/10" />
               </CardContent>
             </Card>
-            <Card className="relative overflow-hidden border-0 bg-gradient-to-br from-violet-500 to-violet-600 text-white shadow-lg shadow-violet-200">
+            <Card className="relative overflow-hidden border-0 bg-gradient-to-br from-indigo-500 to-indigo-600 text-white shadow-lg glow-indigo animate-fade-in-up stagger-2">
               <CardContent className="pt-6">
-                <p className="text-sm font-medium text-violet-100">Tickets de caisse</p>
+                <p className="text-sm font-medium text-indigo-100">Tickets de caisse</p>
                 <p className="mt-1 text-3xl font-bold tracking-tight">
                   {data.nbTickets.toLocaleString("fr-FR")}
                 </p>
                 <div className="absolute -right-4 -top-4 h-24 w-24 rounded-full bg-white/10" />
               </CardContent>
             </Card>
-            <Card className="relative overflow-hidden border-0 bg-gradient-to-br from-fuchsia-500 to-fuchsia-600 text-white shadow-lg shadow-fuchsia-200">
+            <Card className="relative overflow-hidden border-0 bg-gradient-to-br from-fuchsia-500 to-fuchsia-600 text-white shadow-lg glow-rose animate-fade-in-up stagger-3">
               <CardContent className="pt-6">
                 <p className="text-sm font-medium text-fuchsia-100">Panier moyen</p>
                 <p className="mt-1 text-3xl font-bold tracking-tight">
@@ -164,7 +164,7 @@ export default function DashboardPage() {
 
           {/* CA mensuel area chart */}
           {data.caMensuel && data.caMensuel.length > 1 && (
-            <Card className="border-0 shadow-sm">
+            <Card className="border-0 shadow-sm glass-card">
               <CardContent className="pt-6">
                 <h3 className="mb-4 text-sm font-semibold text-gray-700">
                   Evolution du CA mensuel
@@ -202,7 +202,7 @@ export default function DashboardPage() {
                       <tr key={art.ART_ID} className="border-t border-gray-100 hover:bg-gray-50/50 transition-colors">
                         <td className="py-3 pr-4">
                           <span className={`inline-flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold ${
-                            i < 3 ? "bg-indigo-100 text-indigo-700" : "bg-gray-100 text-gray-500"
+                            i < 3 ? "bg-violet-100 text-violet-700" : "bg-gray-100 text-gray-500"
                           }`}>
                             {i + 1}
                           </span>
@@ -210,7 +210,7 @@ export default function DashboardPage() {
                         <td className="py-3 pr-4">
                           <Link
                             href={`/articles/${art.ART_ID}`}
-                            className="font-medium text-gray-900 hover:text-indigo-600 transition-colors"
+                            className="font-medium text-gray-900 hover:text-violet-600 transition-colors"
                           >
                             {art.ART_NOM}
                           </Link>
@@ -242,7 +242,7 @@ export default function DashboardPage() {
 
           {/* Charts side by side */}
           <div className="grid gap-6 lg:grid-cols-2">
-            <Card className="border-0 shadow-sm">
+            <Card className="border-0 shadow-sm glass-card">
               <CardContent className="pt-6">
                 <h3 className="mb-4 text-sm font-semibold text-gray-700">
                   Répartition du CA par rayon
@@ -255,7 +255,7 @@ export default function DashboardPage() {
                 />
               </CardContent>
             </Card>
-            <Card className="border-0 shadow-sm">
+            <Card className="border-0 shadow-sm glass-card">
               <CardContent className="pt-6">
                 <h3 className="mb-4 text-sm font-semibold text-gray-700">
                   CA par marque (Top 15)

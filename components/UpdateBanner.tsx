@@ -47,16 +47,16 @@ export default function UpdateBanner() {
   if (!api) return null;
 
   return (
-    <div className="border-b border-indigo-200 bg-indigo-50 px-4 py-2">
+    <div className="border-b border-emerald-200 bg-emerald-50 px-4 py-2">
       <div className="mx-auto flex max-w-7xl items-center justify-between">
         {update.status === "available" && (
           <>
-            <span className="text-sm text-indigo-800">
+            <span className="text-sm text-emerald-800">
               Nouvelle version {update.version} disponible
             </span>
             <button
               onClick={() => api.downloadUpdate()}
-              className="rounded-md bg-indigo-600 px-3 py-1 text-xs font-medium text-white hover:bg-indigo-700"
+              className="rounded-md bg-emerald-600 px-3 py-1 text-xs font-medium text-white hover:bg-emerald-700"
             >
               Telecharger
             </button>
@@ -65,12 +65,12 @@ export default function UpdateBanner() {
 
         {update.status === "downloading" && (
           <>
-            <span className="text-sm text-indigo-800">
+            <span className="text-sm text-emerald-800">
               Telechargement en cours... {update.percent}%
             </span>
-            <div className="h-1.5 w-32 overflow-hidden rounded-full bg-indigo-200">
+            <div className="h-1.5 w-32 overflow-hidden rounded-full bg-emerald-200">
               <div
-                className="h-full rounded-full bg-indigo-600 transition-all"
+                className="h-full rounded-full bg-emerald-600 transition-all"
                 style={{ width: `${update.percent ?? 0}%` }}
               />
             </div>
@@ -79,12 +79,12 @@ export default function UpdateBanner() {
 
         {update.status === "ready" && (
           <>
-            <span className="text-sm text-indigo-800">
+            <span className="text-sm text-emerald-800">
               Version {update.version} prete. Redemarrer pour installer.
             </span>
             <button
               onClick={() => api.installUpdate()}
-              className="rounded-md bg-indigo-600 px-3 py-1 text-xs font-medium text-white hover:bg-indigo-700"
+              className="rounded-md bg-emerald-600 px-3 py-1 text-xs font-medium text-white hover:bg-emerald-700"
             >
               Redemarrer
             </button>

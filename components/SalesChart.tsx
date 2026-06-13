@@ -17,9 +17,7 @@ import {
 } from "recharts";
 
 const COLORS = [
-  "#6366f1", "#8b5cf6", "#a855f7", "#d946ef", "#ec4899",
-  "#f43f5e", "#f97316", "#eab308", "#22c55e", "#14b8a6",
-  "#06b6d4", "#3b82f6", "#2563eb", "#7c3aed", "#c026d3",
+  "#8b5cf6", "#0ea5e9", "#f43f5e", "#f59e0b", "#14b8a6", "#6366f1", "#ec4899", "#84cc16",
 ];
 
 function formatK(v: number) {
@@ -32,12 +30,20 @@ function formatEuro(v: number) {
   return Number(v).toLocaleString("fr-FR", { minimumFractionDigits: 2 }) + " €";
 }
 
+const glassTooltipStyle = {
+  borderRadius: 12,
+  border: "1px solid rgba(255,255,255,0.5)",
+  boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.05)",
+  background: "rgba(255,255,255,0.85)",
+  backdropFilter: "blur(12px)",
+};
+
 interface BarChartProps {
   data: { name: string; value: number }[];
   color?: string;
 }
 
-export function SimpleBarChart({ data, color = "#6366f1" }: BarChartProps) {
+export function SimpleBarChart({ data, color = "#8b5cf6" }: BarChartProps) {
   return (
     <ResponsiveContainer width="100%" height={320}>
       <BarChart data={data} layout="vertical" margin={{ left: 10, right: 20 }}>
@@ -46,7 +52,7 @@ export function SimpleBarChart({ data, color = "#6366f1" }: BarChartProps) {
         <YAxis type="category" dataKey="name" width={110} tick={{ fontSize: 11, fill: "#475569" }} axisLine={false} tickLine={false} />
         <Tooltip
           formatter={(value) => formatEuro(Number(value))}
-          contentStyle={{ borderRadius: 12, border: "1px solid #e2e8f0", boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.05)" }}
+          contentStyle={glassTooltipStyle}
         />
         <defs>
           <linearGradient id="barGradient" x1="0" y1="0" x2="1" y2="0">
@@ -84,7 +90,7 @@ export function SimplePieChart({ data }: PieChartProps) {
         </Pie>
         <Tooltip
           formatter={(value) => formatEuro(Number(value))}
-          contentStyle={{ borderRadius: 12, border: "1px solid #e2e8f0", boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.05)" }}
+          contentStyle={glassTooltipStyle}
         />
         <Legend
           iconType="circle"
@@ -106,8 +112,8 @@ export function SimpleAreaChart({ data }: AreaChartProps) {
       <AreaChart data={data} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
         <defs>
           <linearGradient id="areaGradient" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#6366f1" stopOpacity={0.3} />
-            <stop offset="100%" stopColor="#6366f1" stopOpacity={0} />
+            <stop offset="0%" stopColor="#8b5cf6" stopOpacity={0.3} />
+            <stop offset="100%" stopColor="#8b5cf6" stopOpacity={0} />
           </linearGradient>
         </defs>
         <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
@@ -115,16 +121,16 @@ export function SimpleAreaChart({ data }: AreaChartProps) {
         <YAxis tickFormatter={formatK} tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} />
         <Tooltip
           formatter={(value) => formatEuro(Number(value))}
-          contentStyle={{ borderRadius: 12, border: "1px solid #e2e8f0", boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.05)" }}
+          contentStyle={glassTooltipStyle}
         />
         <Area
           type="monotone"
           dataKey="value"
-          stroke="#6366f1"
+          stroke="#8b5cf6"
           strokeWidth={2.5}
           fill="url(#areaGradient)"
-          dot={{ r: 4, fill: "#6366f1", strokeWidth: 2, stroke: "#fff" }}
-          activeDot={{ r: 6, fill: "#6366f1", strokeWidth: 2, stroke: "#fff" }}
+          dot={{ r: 4, fill: "#8b5cf6", strokeWidth: 2, stroke: "#fff" }}
+          activeDot={{ r: 6, fill: "#8b5cf6", strokeWidth: 2, stroke: "#fff" }}
         />
       </AreaChart>
     </ResponsiveContainer>

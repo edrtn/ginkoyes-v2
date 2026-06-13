@@ -63,7 +63,8 @@ export async function GET(
 ) {
   try {
     const { nom } = await params;
-    const marque = decodeURIComponent(nom).toUpperCase();
+    let marque: string;
+    try { marque = decodeURIComponent(nom).toUpperCase(); } catch { marque = nom.toUpperCase(); }
 
     // Auto period: Jan 1 → today for N, same period for N-1
     const now = new Date();

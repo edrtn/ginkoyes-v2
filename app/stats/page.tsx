@@ -60,7 +60,7 @@ export default function StatsPage() {
     return (
       <div className="flex items-center justify-center py-20">
         <div className="space-y-3 text-center">
-          <div className="mx-auto h-8 w-8 animate-spin rounded-full border-4 border-indigo-200 border-t-indigo-600" />
+          <div className="mx-auto h-8 w-8 animate-spin rounded-full border-4 border-teal-200 border-t-teal-600" />
           <p className="text-sm text-gray-500">Chargement des statistiques...</p>
         </div>
       </div>
@@ -82,36 +82,36 @@ export default function StatsPage() {
       {/* Summary cards for last full year */}
       {lastFull && (
         <div className="grid gap-4 sm:grid-cols-3">
-          <Card className="relative overflow-hidden border-0 bg-gradient-to-br from-indigo-500 to-indigo-600 text-white shadow-lg shadow-indigo-200">
+          <Card className="relative overflow-hidden border-0 bg-gradient-to-br from-teal-500 to-teal-600 text-white shadow-lg glow-teal">
             <CardContent className="pt-5 pb-4">
-              <p className="text-sm font-medium text-indigo-100">CA {lastFull.annee}</p>
+              <p className="text-sm font-medium text-teal-100">CA {lastFull.annee}</p>
               <p className="mt-1 text-3xl font-bold tracking-tight">{formatEuro(lastFull.ca)}</p>
               {current && (
-                <p className="mt-2 text-xs text-indigo-200">
+                <p className="mt-2 text-xs text-teal-200">
                   {currentYear} en cours : {formatEuro(current.ca)}
                 </p>
               )}
               <div className="absolute -right-4 -top-4 h-24 w-24 rounded-full bg-white/10" />
             </CardContent>
           </Card>
-          <Card className="relative overflow-hidden border-0 bg-gradient-to-br from-violet-500 to-violet-600 text-white shadow-lg shadow-violet-200">
+          <Card className="relative overflow-hidden border-0 bg-gradient-to-br from-cyan-500 to-cyan-600 text-white shadow-lg glow-sky">
             <CardContent className="pt-5 pb-4">
-              <p className="text-sm font-medium text-violet-100">Panier moyen {lastFull.annee}</p>
+              <p className="text-sm font-medium text-cyan-100">Panier moyen {lastFull.annee}</p>
               <p className="mt-1 text-3xl font-bold tracking-tight">{lastFull.panierMoyen.toFixed(2)} €</p>
               {current && (
-                <p className="mt-2 text-xs text-violet-200">
+                <p className="mt-2 text-xs text-cyan-200">
                   {currentYear} en cours : {current.panierMoyen.toFixed(2)} €
                 </p>
               )}
               <div className="absolute -right-4 -top-4 h-24 w-24 rounded-full bg-white/10" />
             </CardContent>
           </Card>
-          <Card className="relative overflow-hidden border-0 bg-gradient-to-br from-fuchsia-500 to-fuchsia-600 text-white shadow-lg shadow-fuchsia-200">
+          <Card className="relative overflow-hidden border-0 bg-gradient-to-br from-emerald-500 to-emerald-600 text-white shadow-lg shadow-emerald-200">
             <CardContent className="pt-5 pb-4">
-              <p className="text-sm font-medium text-fuchsia-100">Indice de vente {lastFull.annee}</p>
+              <p className="text-sm font-medium text-emerald-100">Indice de vente {lastFull.annee}</p>
               <p className="mt-1 text-3xl font-bold tracking-tight">{lastFull.indiceVente.toFixed(2)}</p>
               {current && (
-                <p className="mt-2 text-xs text-fuchsia-200">
+                <p className="mt-2 text-xs text-emerald-200">
                   {currentYear} en cours : {current.indiceVente.toFixed(2)}
                 </p>
               )}
@@ -129,8 +129,8 @@ export default function StatsPage() {
             <BarChart data={data} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
               <defs>
                 <linearGradient id="caGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#6366f1" />
-                  <stop offset="100%" stopColor="#8b5cf6" />
+                  <stop offset="0%" stopColor="#14b8a6" />
+                  <stop offset="100%" stopColor="#0d9488" />
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
@@ -170,10 +170,10 @@ export default function StatsPage() {
                 <Line
                   type="monotone"
                   dataKey="panierMoyen"
-                  stroke="#8b5cf6"
+                  stroke="#14b8a6"
                   strokeWidth={2.5}
-                  dot={{ r: 5, fill: "#8b5cf6", strokeWidth: 2, stroke: "#fff" }}
-                  activeDot={{ r: 7, fill: "#8b5cf6", strokeWidth: 2, stroke: "#fff" }}
+                  dot={{ r: 5, fill: "#14b8a6", strokeWidth: 2, stroke: "#fff" }}
+                  activeDot={{ r: 7, fill: "#14b8a6", strokeWidth: 2, stroke: "#fff" }}
                 />
               </LineChart>
             </ResponsiveContainer>
@@ -202,10 +202,10 @@ export default function StatsPage() {
                 <Line
                   type="monotone"
                   dataKey="indiceVente"
-                  stroke="#d946ef"
+                  stroke="#0ea5e9"
                   strokeWidth={2.5}
-                  dot={{ r: 5, fill: "#d946ef", strokeWidth: 2, stroke: "#fff" }}
-                  activeDot={{ r: 7, fill: "#d946ef", strokeWidth: 2, stroke: "#fff" }}
+                  dot={{ r: 5, fill: "#0ea5e9", strokeWidth: 2, stroke: "#fff" }}
+                  activeDot={{ r: 7, fill: "#0ea5e9", strokeWidth: 2, stroke: "#fff" }}
                 />
               </LineChart>
             </ResponsiveContainer>
@@ -236,7 +236,7 @@ export default function StatsPage() {
                   const isCurrentYear = row.annee === currentYear;
 
                   return (
-                    <tr key={row.annee} className={`border-t border-gray-100 transition-colors ${i === 0 ? "bg-indigo-50/30" : "hover:bg-gray-50/50"}`}>
+                    <tr key={row.annee} className={`border-t border-gray-100 transition-colors ${i === 0 ? "bg-teal-50/30" : "hover:bg-gray-50/50"}`}>
                       <td className="py-3 pr-4">
                         <span className="font-semibold text-gray-900">{row.annee}</span>
                         {isCurrentYear && (
@@ -263,7 +263,7 @@ export default function StatsPage() {
                         {row.panierMoyen.toFixed(2)} €
                       </td>
                       <td className="py-3 text-right">
-                        <span className="inline-flex items-center rounded-full bg-fuchsia-50 px-2.5 py-0.5 text-xs font-bold text-fuchsia-700">
+                        <span className="inline-flex items-center rounded-full bg-teal-50 px-2.5 py-0.5 text-xs font-bold text-teal-700">
                           {row.indiceVente.toFixed(2)}
                         </span>
                       </td>

@@ -53,7 +53,6 @@ interface TauxArticle {
   rayon: string;
   famille: string;
   sousFamille: string;
-  qteCommandee: number;
   qteRecue: number;
   qteVendue: number;
   tauxSortie: number;
@@ -63,7 +62,7 @@ interface TauxArticle {
 
 interface TauxSortieData {
   articles: TauxArticle[];
-  totaux: { qteCommandee: number; qteRecue: number; qteVendue: number; tauxSortieMoyen: number };
+  totaux: { qteRecue: number; qteVendue: number; tauxSortieMoyen: number };
 }
 
 interface DetailLine {
@@ -140,6 +139,49 @@ const MONTHS = [
   "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre",
 ];
 
+// ── SessionStorage persistence ─────────────────────────
+
+const ACHAT_STORAGE_KEY = "achat-analysis-state";
+
+interface AchatSavedState {
+  step: number;
+  selectedMarque: string;
+  targetYear: string;
+  selectedCollection: string;
+  periodFromDay: number;
+  periodFromMonth: number;
+  periodToDay: number;
+  periodToMonth: number;
+  recap: Recap | null;
+  comparatif: Comparatif | null;
+  tauxSortie: TauxSortieData | null;
+  comparatifDetail: ComparatifDetail | null;
+  sourceFilter: SourceFilter;
+  showDetail: boolean;
+}
+
+function saveAchatState(state: AchatSavedState) {
+  try {
+    sessionStorage.setItem(ACHAT_STORAGE_KEY, JSON.stringify(state));
+  } catch {}
+}
+
+function loadAchatState(): AchatSavedState | null {
+  try {
+    const raw = sessionStorage.getItem(ACHAT_STORAGE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as AchatSavedState;
+  } catch {
+    return null;
+  }
+}
+
+function clearAchatState() {
+  try {
+    sessionStorage.removeItem(ACHAT_STORAGE_KEY);
+  } catch {}
+}
+
 // ── Composant principal ────────────────────────────────
 
 export default function AchatPage() {
@@ -178,6 +220,30 @@ export default function AchatPage() {
   // UI
   const [loadingFilters, setLoadingFilters] = useState(true);
   const [loadingData, setLoadingData] = useState(false);
+
+  // Restore from sessionStorage on client mount
+  const didRestoreRef = useRef(false);
+  useEffect(() => {
+    const saved = loadAchatState();
+    if (saved && saved.step === 4 && saved.recap) {
+      didRestoreRef.current = true;
+      setStep(saved.step);
+      setSelectedMarque(saved.selectedMarque);
+      setMarqueSearch(saved.selectedMarque);
+      setTargetYear(saved.targetYear);
+      setSelectedCollection(saved.selectedCollection);
+      setPeriodFromDay(saved.periodFromDay);
+      setPeriodFromMonth(saved.periodFromMonth);
+      setPeriodToDay(saved.periodToDay);
+      setPeriodToMonth(saved.periodToMonth);
+      setRecap(saved.recap);
+      setComparatif(saved.comparatif);
+      setTauxSortie(saved.tauxSortie);
+      setComparatifDetail(saved.comparatifDetail);
+      setSourceFilter(saved.sourceFilter);
+      setShowDetail(saved.showDetail);
+    }
+  }, []);
 
   // Marques filtrées par recherche
   const filteredMarques = useMemo(() => {
@@ -239,17 +305,19 @@ export default function AchatPage() {
     });
   }, [collections, analysisYear]);
 
-  // Quand on change l'année cible, reset collection
+  // Auto-sélection si une seule collection (skip if restored from session)
   useEffect(() => {
-    setSelectedCollection("");
-  }, [targetYear]);
-
-  // Auto-sélection si une seule collection
-  useEffect(() => {
+    if (didRestoreRef.current) return;
     if (filteredCollections.length === 1) {
       setSelectedCollection(String(filteredCollections[0].COL_ID));
     }
   }, [filteredCollections]);
+
+  // Handler: quand l'utilisateur change l'année, reset la collection
+  const handleTargetYearChange = (year: string) => {
+    setTargetYear(year);
+    setSelectedCollection("");
+  };
 
   // Labels des périodes pour l'affichage
   const periodLabel1 = fromN1 && toN1 ? `${formatDateFr(fromN1)} → ${formatDateFr(toN1)}` : "";
@@ -276,7 +344,7 @@ export default function AchatPage() {
           `/api/achat/comparatif?marque=${encodeURIComponent(selectedMarque)}&fromN1=${fromN1}&toN1=${toN1Excl}&fromN2=${fromN2}&toN2=${toN2Excl}`
         ).then((r) => r.json()),
         fetch(
-          `/api/achat/taux-sortie?collectionId=${selectedCollection}&marque=${encodeURIComponent(selectedMarque)}`
+          `/api/achat/taux-sortie?collectionId=${selectedCollection}&marque=${encodeURIComponent(selectedMarque)}&from=${fromN1}&to=${toN1Excl}`
         ).then((r) => r.json()),
       ]);
 
@@ -309,8 +377,37 @@ export default function AchatPage() {
   }, [selectedMarque, fromN1, toN1, fromN2, toN2, comparatifDetail]);
 
   useEffect(() => {
-    if (step === 4) loadData();
+    if (step === 4) {
+      // Skip auto-load if we just restored data from sessionStorage
+      if (didRestoreRef.current) {
+        didRestoreRef.current = false;
+        return;
+      }
+      loadData();
+    }
   }, [step, loadData]);
+
+  // Persist state to sessionStorage whenever analysis data changes
+  useEffect(() => {
+    if (step === 4 && recap) {
+      saveAchatState({
+        step,
+        selectedMarque,
+        targetYear,
+        selectedCollection,
+        periodFromDay,
+        periodFromMonth,
+        periodToDay,
+        periodToMonth,
+        recap,
+        comparatif,
+        tauxSortie,
+        comparatifDetail,
+        sourceFilter,
+        showDetail,
+      });
+    }
+  }, [step, selectedMarque, targetYear, selectedCollection, periodFromDay, periodFromMonth, periodToDay, periodToMonth, recap, comparatif, tauxSortie, comparatifDetail, sourceFilter, showDetail]);
 
   // Navigation
   const goToStep2 = () => { if (selectedMarque) setStep(2); };
@@ -318,6 +415,7 @@ export default function AchatPage() {
   const goToStep4 = () => { if (analysisYear) setStep(4); };
 
   const resetWizard = () => {
+    clearAchatState();
     setStep(1);
     setSelectedMarque("");
     setMarqueSearch("");
@@ -341,7 +439,7 @@ export default function AchatPage() {
     return (
       <div className="flex items-center justify-center py-20">
         <div className="space-y-3 text-center">
-          <div className="mx-auto h-8 w-8 animate-spin rounded-full border-4 border-indigo-200 border-t-indigo-600" />
+          <div className="mx-auto h-8 w-8 animate-spin rounded-full border-4 border-amber-200 border-t-amber-500" />
           <p className="text-sm text-gray-500">Chargement...</p>
         </div>
       </div>
@@ -370,16 +468,16 @@ export default function AchatPage() {
         {STEPS.map(({ n, label }, i) => (
           <div key={n} className="flex items-center gap-2">
             {i > 0 && (
-              <div className={`h-px w-8 ${step >= n ? "bg-indigo-400" : "bg-gray-200"}`} />
+              <div className={`h-px w-8 ${step >= n ? "bg-amber-300" : "bg-gray-200"}`} />
             )}
             <button
               onClick={() => { if (n < step) setStep(n); }}
               disabled={n > step}
               className={`flex items-center gap-2 rounded-full px-3 py-1.5 text-sm font-medium transition-all ${
                 step === n
-                  ? "bg-indigo-600 text-white shadow-md shadow-indigo-200"
+                  ? "bg-amber-500 text-white shadow-md shadow-amber-200"
                   : step > n
-                  ? "bg-indigo-100 text-indigo-700 hover:bg-indigo-200 cursor-pointer"
+                  ? "bg-amber-100 text-amber-600 hover:bg-amber-200 cursor-pointer"
                   : "bg-gray-100 text-gray-400"
               }`}
             >
@@ -388,7 +486,7 @@ export default function AchatPage() {
                   step === n
                     ? "bg-white/20 text-white"
                     : step > n
-                    ? "bg-indigo-600 text-white"
+                    ? "bg-amber-500 text-white"
                     : "bg-gray-300 text-white"
                 }`}
               >
@@ -426,8 +524,8 @@ export default function AchatPage() {
           <CardContent className="py-8">
             <div className="mx-auto max-w-md space-y-6">
               <div className="text-center">
-                <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-indigo-100">
-                  <svg className="h-6 w-6 text-indigo-600" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-amber-100">
+                  <svg className="h-6 w-6 text-amber-600" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M9.568 3H5.25A2.25 2.25 0 003 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.607.33a18.095 18.095 0 005.223-5.223c.542-.827.369-1.908-.33-2.607L11.16 3.66A2.25 2.25 0 009.568 3z" />
                     <path strokeLinecap="round" strokeLinejoin="round" d="M6 6h.008v.008H6V6z" />
                   </svg>
@@ -451,10 +549,10 @@ export default function AchatPage() {
                     }}
                     onFocus={() => setShowMarqueList(true)}
                     placeholder="Rechercher une marque..."
-                    className="w-full rounded-lg border border-gray-200 bg-white py-3 pl-10 pr-4 text-sm text-gray-700 shadow-sm focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                    className="w-full rounded-lg border border-gray-200 bg-white py-3 pl-10 pr-4 text-sm text-gray-700 shadow-sm focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-100"
                   />
                   {selectedMarque && (
-                    <span className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-semibold text-indigo-700">
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">
                       {selectedMarque}
                     </span>
                   )}
@@ -472,8 +570,8 @@ export default function AchatPage() {
                             setMarqueSearch(m);
                             setShowMarqueList(false);
                           }}
-                          className={`w-full px-4 py-2.5 text-left text-sm transition-colors hover:bg-indigo-50 ${
-                            selectedMarque === m ? "bg-indigo-50 font-semibold text-indigo-700" : "text-gray-700"
+                          className={`w-full px-4 py-2.5 text-left text-sm transition-colors hover:bg-amber-50 ${
+                            selectedMarque === m ? "bg-zinc-50 font-semibold text-zinc-700" : "text-gray-700"
                           }`}
                         >
                           {m}
@@ -487,7 +585,7 @@ export default function AchatPage() {
               <button
                 onClick={goToStep2}
                 disabled={!selectedMarque}
-                className="w-full rounded-lg bg-indigo-600 px-4 py-3 text-sm font-semibold text-white shadow-md shadow-indigo-200 transition-all hover:bg-indigo-700 disabled:opacity-40 disabled:shadow-none"
+                className="w-full rounded-lg bg-amber-500 px-4 py-3 text-sm font-semibold text-white shadow-md shadow-amber-200 transition-all hover:bg-amber-600 disabled:opacity-40 disabled:shadow-none"
               >
                 Continuer
               </button>
@@ -502,7 +600,7 @@ export default function AchatPage() {
       {step === 2 && (
         <div className="space-y-4">
           <div className="flex items-center gap-2">
-            <span className="rounded-full bg-indigo-100 px-3 py-1 text-sm font-semibold text-indigo-700">
+            <span className="rounded-full bg-amber-100 px-3 py-1 text-sm font-semibold text-amber-700">
               {selectedMarque}
             </span>
           </div>
@@ -511,8 +609,8 @@ export default function AchatPage() {
             <CardContent className="py-8">
               <div className="mx-auto max-w-md space-y-6">
                 <div className="text-center">
-                  <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-violet-100">
-                    <svg className="h-6 w-6 text-violet-600" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                  <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-amber-100">
+                    <svg className="h-6 w-6 text-amber-600" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
                     </svg>
                   </div>
@@ -524,10 +622,10 @@ export default function AchatPage() {
                   {availableTargetYears.map((y) => (
                     <button
                       key={y}
-                      onClick={() => setTargetYear(String(y))}
+                      onClick={() => handleTargetYearChange(String(y))}
                       className={`rounded-lg border-2 px-4 py-3 text-sm font-bold transition-all ${
                         targetYear === String(y)
-                          ? "border-indigo-600 bg-indigo-50 text-indigo-700 shadow-md shadow-indigo-100"
+                          ? "border-amber-500 bg-amber-50 text-amber-700 shadow-md shadow-amber-100"
                           : "border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:bg-gray-50"
                       }`}
                     >
@@ -573,7 +671,7 @@ export default function AchatPage() {
                             onClick={() => setSelectedCollection(String(c.COL_ID))}
                             className={`w-full rounded-lg border-2 px-4 py-3 text-left text-sm font-medium transition-all ${
                               selectedCollection === String(c.COL_ID)
-                                ? "border-indigo-600 bg-indigo-50 text-indigo-700 shadow-md shadow-indigo-100"
+                                ? "border-amber-500 bg-amber-50 text-amber-700 shadow-md shadow-amber-100"
                                 : "border-gray-200 bg-white text-gray-700 hover:border-gray-300 hover:bg-gray-50"
                             }`}
                           >
@@ -589,7 +687,7 @@ export default function AchatPage() {
                   <button
                     onClick={goToStep3}
                     disabled={!selectedCollection}
-                    className="w-full rounded-lg bg-indigo-600 px-4 py-3 text-sm font-semibold text-white shadow-md shadow-indigo-200 transition-all hover:bg-indigo-700 disabled:opacity-40 disabled:shadow-none"
+                    className="w-full rounded-lg bg-amber-500 px-4 py-3 text-sm font-semibold text-white shadow-md shadow-amber-200 transition-all hover:bg-amber-600 disabled:opacity-40 disabled:shadow-none"
                   >
                     Continuer
                   </button>
@@ -607,13 +705,13 @@ export default function AchatPage() {
         <div className="space-y-4">
           {/* Récap sélections */}
           <div className="flex flex-wrap items-center gap-2">
-            <span className="rounded-full bg-indigo-100 px-3 py-1 text-sm font-semibold text-indigo-700">
+            <span className="rounded-full bg-amber-100 px-3 py-1 text-sm font-semibold text-amber-700">
               {selectedMarque}
             </span>
             <svg className="h-4 w-4 text-gray-300" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
             </svg>
-            <span className="rounded-full bg-violet-100 px-3 py-1 text-sm font-semibold text-violet-700">
+            <span className="rounded-full bg-amber-100 px-3 py-1 text-sm font-semibold text-amber-700">
               Achats {targetYear}
             </span>
             <svg className="h-4 w-4 text-gray-300" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
@@ -628,8 +726,8 @@ export default function AchatPage() {
             <CardContent className="py-8">
               <div className="mx-auto max-w-lg space-y-6">
                 <div className="text-center">
-                  <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100">
-                    <svg className="h-6 w-6 text-emerald-600" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                  <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-amber-100">
+                    <svg className="h-6 w-6 text-amber-600" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5" />
                     </svg>
                   </div>
@@ -650,12 +748,12 @@ export default function AchatPage() {
                         max={31}
                         value={periodFromDay}
                         onChange={(e) => setPeriodFromDay(Math.max(1, Math.min(31, Number(e.target.value) || 1)))}
-                        className="w-16 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-center text-sm font-semibold text-gray-700 focus:border-indigo-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                        className="w-16 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-center text-sm font-semibold text-gray-700 focus:border-amber-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-100"
                       />
                       <select
                         value={periodFromMonth}
                         onChange={(e) => setPeriodFromMonth(Number(e.target.value))}
-                        className="flex-1 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700 focus:border-indigo-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                        className="flex-1 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700 focus:border-amber-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-100"
                       >
                         {MONTHS.map((m, i) => (
                           <option key={i} value={i + 1}>{m}</option>
@@ -673,12 +771,12 @@ export default function AchatPage() {
                         max={31}
                         value={periodToDay}
                         onChange={(e) => setPeriodToDay(Math.max(1, Math.min(31, Number(e.target.value) || 1)))}
-                        className="w-16 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-center text-sm font-semibold text-gray-700 focus:border-indigo-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                        className="w-16 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-center text-sm font-semibold text-gray-700 focus:border-amber-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-100"
                       />
                       <select
                         value={periodToMonth}
                         onChange={(e) => setPeriodToMonth(Number(e.target.value))}
-                        className="flex-1 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700 focus:border-indigo-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                        className="flex-1 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700 focus:border-amber-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-100"
                       >
                         {MONTHS.map((m, i) => (
                           <option key={i} value={i + 1}>{m}</option>
@@ -692,7 +790,7 @@ export default function AchatPage() {
                 <div className="rounded-lg border border-gray-100 bg-gray-50 p-4">
                   <div className="flex items-center gap-3">
                     <div className="flex-1 text-center">
-                      <p className="text-xs font-semibold uppercase tracking-wider text-indigo-500">N ({analysisYear})</p>
+                      <p className="text-xs font-semibold uppercase tracking-wider text-amber-500">N ({analysisYear})</p>
                       <p className="mt-1 text-sm font-medium text-gray-700">
                         {periodFromDay} {MONTHS[periodFromMonth - 1]} &rarr; {periodToDay} {MONTHS[periodToMonth - 1]} {analysisYear}
                       </p>
@@ -709,7 +807,7 @@ export default function AchatPage() {
 
                 <button
                   onClick={goToStep4}
-                  className="w-full rounded-lg bg-indigo-600 px-4 py-3 text-sm font-semibold text-white shadow-md shadow-indigo-200 transition-all hover:bg-indigo-700"
+                  className="w-full rounded-lg bg-amber-500 px-4 py-3 text-sm font-semibold text-white shadow-md shadow-amber-200 transition-all hover:bg-amber-600"
                 >
                   Lancer l&apos;analyse
                 </button>
@@ -726,13 +824,13 @@ export default function AchatPage() {
         <div className="space-y-6">
           {/* Récap sélection */}
           <div className="flex flex-wrap items-center gap-2">
-            <span className="rounded-full bg-indigo-100 px-3 py-1 text-sm font-semibold text-indigo-700">
+            <span className="rounded-full bg-amber-100 px-3 py-1 text-sm font-semibold text-amber-700">
               {selectedMarque}
             </span>
             <svg className="h-4 w-4 text-gray-300" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
             </svg>
-            <span className="rounded-full bg-violet-100 px-3 py-1 text-sm font-semibold text-violet-700">
+            <span className="rounded-full bg-amber-100 px-3 py-1 text-sm font-semibold text-amber-700">
               Achats {targetYear}
             </span>
             <svg className="h-4 w-4 text-gray-300" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
@@ -744,7 +842,7 @@ export default function AchatPage() {
             <svg className="h-4 w-4 text-gray-300" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
             </svg>
-            <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
+            <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700">
               {periodLabel1}
             </span>
             <span className="text-xs text-gray-400">vs</span>
@@ -756,7 +854,7 @@ export default function AchatPage() {
           {loadingData ? (
             <div className="flex items-center justify-center py-16">
               <div className="space-y-3 text-center">
-                <div className="mx-auto h-8 w-8 animate-spin rounded-full border-4 border-indigo-200 border-t-indigo-600" />
+                <div className="mx-auto h-8 w-8 animate-spin rounded-full border-4 border-amber-200 border-t-amber-500" />
                 <p className="text-sm text-gray-500">Chargement des données...</p>
               </div>
             </div>
@@ -769,35 +867,35 @@ export default function AchatPage() {
                     Récap commande &mdash; {collections.find((c) => String(c.COL_ID) === selectedCollection)?.COL_NOM}
                   </h2>
                   <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                    <Card className="relative overflow-hidden border-0 bg-gradient-to-br from-indigo-500 to-indigo-600 text-white shadow-lg shadow-indigo-200">
+                    <Card className="relative overflow-hidden border-0 bg-gradient-to-br from-amber-500 to-amber-600 text-white shadow-lg shadow-amber-200">
                       <CardContent className="pt-5 pb-4">
-                        <p className="text-sm font-medium text-indigo-100">Modèles commandés</p>
+                        <p className="text-sm font-medium text-amber-100">Modèles commandés</p>
                         <p className="mt-1 text-3xl font-bold tracking-tight">{recap.nbModeles}</p>
-                        <p className="mt-1 text-xs text-indigo-200">{recap.qteTotale} pièces</p>
+                        <p className="mt-1 text-xs text-amber-200">{recap.qteTotale} pièces</p>
                         <div className="absolute -right-4 -top-4 h-24 w-24 rounded-full bg-white/10" />
                       </CardContent>
                     </Card>
-                    <Card className="relative overflow-hidden border-0 bg-gradient-to-br from-violet-500 to-violet-600 text-white shadow-lg shadow-violet-200">
+                    <Card className="relative overflow-hidden border-0 bg-gradient-to-br from-orange-500 to-orange-600 text-white shadow-lg shadow-orange-200">
                       <CardContent className="pt-5 pb-4">
-                        <p className="text-sm font-medium text-violet-100">Montant achat net</p>
+                        <p className="text-sm font-medium text-orange-100">Montant achat net</p>
                         <p className="mt-1 text-3xl font-bold tracking-tight">{formatEuro(recap.montantAchatNet)}</p>
-                        <p className="mt-1 text-xs text-violet-200">Brut : {formatEuro(recap.montantAchatBrut)}</p>
+                        <p className="mt-1 text-xs text-orange-200">Brut : {formatEuro(recap.montantAchatBrut)}</p>
                         <div className="absolute -right-4 -top-4 h-24 w-24 rounded-full bg-white/10" />
                       </CardContent>
                     </Card>
-                    <Card className="relative overflow-hidden border-0 bg-gradient-to-br from-fuchsia-500 to-fuchsia-600 text-white shadow-lg shadow-fuchsia-200">
+                    <Card className="relative overflow-hidden border-0 bg-gradient-to-br from-teal-500 to-teal-600 text-white shadow-lg shadow-teal-200">
                       <CardContent className="pt-5 pb-4">
-                        <p className="text-sm font-medium text-fuchsia-100">Montant vente</p>
+                        <p className="text-sm font-medium text-teal-100">Montant vente</p>
                         <p className="mt-1 text-3xl font-bold tracking-tight">{formatEuro(recap.montantVente)}</p>
-                        <p className="mt-1 text-xs text-fuchsia-200">Coeff : {recap.coeff.toFixed(2)}</p>
+                        <p className="mt-1 text-xs text-teal-200">Coeff : {recap.coeff.toFixed(2)}</p>
                         <div className="absolute -right-4 -top-4 h-24 w-24 rounded-full bg-white/10" />
                       </CardContent>
                     </Card>
-                    <Card className="relative overflow-hidden border-0 bg-gradient-to-br from-emerald-500 to-emerald-600 text-white shadow-lg shadow-emerald-200">
+                    <Card className="relative overflow-hidden border-0 bg-gradient-to-br from-yellow-500 to-yellow-600 text-white shadow-lg shadow-yellow-200">
                       <CardContent className="pt-5 pb-4">
-                        <p className="text-sm font-medium text-emerald-100">Marge</p>
+                        <p className="text-sm font-medium text-yellow-100">Marge</p>
                         <p className="mt-1 text-3xl font-bold tracking-tight">{formatPct(recap.marge)}</p>
-                        <p className="mt-1 text-xs text-emerald-200">
+                        <p className="mt-1 text-xs text-yellow-200">
                           Remise totale : {formatPct(recap.remise1 + recap.remise2 + recap.remise3)}
                         </p>
                         <div className="absolute -right-4 -top-4 h-24 w-24 rounded-full bg-white/10" />
@@ -848,7 +946,7 @@ export default function AchatPage() {
                         }}
                         className={`rounded-lg px-4 py-2 text-sm font-medium transition-all ${
                           sourceFilter === key
-                            ? "bg-indigo-600 text-white shadow-md shadow-indigo-200"
+                            ? "bg-amber-500 text-white shadow-md shadow-amber-200"
                             : "bg-gray-100 text-gray-600 hover:bg-gray-200"
                         }`}
                       >
@@ -857,7 +955,7 @@ export default function AchatPage() {
                     ))}
                     {loadingDetail && (
                       <div className="ml-2 flex items-center gap-2 text-xs text-gray-400">
-                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-indigo-200 border-t-indigo-600" />
+                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-amber-200 border-t-amber-500" />
                         Chargement...
                       </div>
                     )}
@@ -920,7 +1018,7 @@ export default function AchatPage() {
                               <thead>
                                 <tr className="text-left text-xs uppercase tracking-wider text-gray-400">
                                   <th className="pb-3 pr-4 font-medium">
-                                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${sourceFilter === "CAISSE" ? "bg-blue-50 text-blue-700" : "bg-purple-50 text-purple-700"}`}>
+                                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${sourceFilter === "CAISSE" ? "bg-zinc-100 text-zinc-700" : "bg-zinc-50 text-zinc-600"}`}>
                                       {sourceFilter === "CAISSE" ? "Caisse" : "Web"}
                                     </span>
                                   </th>
@@ -1001,7 +1099,7 @@ export default function AchatPage() {
                             />
                             <Legend />
                             <Bar dataKey={String(analysisYear! - 1)} fill="#c7d2fe" radius={[4, 4, 0, 0]} barSize={28} />
-                            <Bar dataKey={String(analysisYear!)} fill="#6366f1" radius={[4, 4, 0, 0]} barSize={28} />
+                            <Bar dataKey={String(analysisYear!)} fill="#10b981" radius={[4, 4, 0, 0]} barSize={28} />
                           </BarChart>
                         </ResponsiveContainer>
                       </CardContent>
@@ -1072,7 +1170,7 @@ export default function AchatPage() {
                     </button>
                     <a
                       href={`/api/achat/export-detail?marque=${encodeURIComponent(selectedMarque)}&fromN1=${fromN1}&toN1=${addOneDay(toN1)}&fromN2=${fromN2}&toN2=${addOneDay(toN2)}`}
-                      className="flex items-center gap-2 rounded-lg bg-emerald-50 px-4 py-2.5 text-sm font-medium text-emerald-700 transition-all hover:bg-emerald-100"
+                      className="flex items-center gap-2 rounded-lg bg-amber-50 px-4 py-2.5 text-sm font-medium text-amber-700 transition-all hover:bg-amber-100"
                     >
                       <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
@@ -1087,7 +1185,7 @@ export default function AchatPage() {
                       <CardContent className="pt-6">
                         {loadingDetail ? (
                           <div className="flex items-center justify-center py-8">
-                            <div className="h-6 w-6 animate-spin rounded-full border-2 border-indigo-200 border-t-indigo-600" />
+                            <div className="h-6 w-6 animate-spin rounded-full border-2 border-amber-200 border-t-amber-500" />
                             <span className="ml-3 text-sm text-gray-400">Chargement du détail...</span>
                           </div>
                         ) : comparatifDetail ? (() => {
@@ -1104,7 +1202,7 @@ export default function AchatPage() {
                               <h3 className="mb-3 text-sm font-semibold text-gray-700">
                                 Détail des ventes ({n1Lines.length} + {n2Lines.length} lignes)
                                 {sourceFilter !== "TOUT" && (
-                                  <span className={`ml-2 inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${sourceFilter === "CAISSE" ? "bg-blue-50 text-blue-700" : "bg-purple-50 text-purple-700"}`}>
+                                  <span className={`ml-2 inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${sourceFilter === "CAISSE" ? "bg-zinc-100 text-zinc-700" : "bg-zinc-50 text-zinc-600"}`}>
                                     {sourceFilter === "CAISSE" ? "Caisse" : "Web"}
                                   </span>
                                 )}
@@ -1133,13 +1231,13 @@ export default function AchatPage() {
                                         </td>
                                         <td className="px-3 py-2">
                                           <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${
-                                            l.source === "CAISSE" ? "bg-blue-50 text-blue-700" : "bg-purple-50 text-purple-700"
+                                            l.source === "CAISSE" ? "bg-zinc-100 text-zinc-700" : "bg-zinc-50 text-zinc-600"
                                           }`}>
                                             {l.source === "CAISSE" ? "Caisse" : "Web"}
                                           </span>
                                         </td>
                                         <td className="max-w-[180px] truncate px-3 py-2 text-xs font-medium">
-                                          <a href={`/articles/${l.artId}`} className="text-indigo-600 hover:text-indigo-800 hover:underline">{l.article}</a>
+                                          <a href={`/articles/${l.artId}`} className="text-amber-600 hover:text-amber-800 hover:underline">{l.article}</a>
                                         </td>
                                         <td className="px-3 py-2 text-xs text-gray-500">{l.ref}</td>
                                         <td className="px-3 py-2 text-xs text-gray-500">{l.couleur || "—"}</td>
@@ -1167,13 +1265,7 @@ export default function AchatPage() {
                     Taux de sortie
                   </h2>
 
-                  <div className="mb-4 grid gap-4 sm:grid-cols-4">
-                    <Card className="border-0 shadow-sm">
-                      <CardContent className="pt-4 pb-3">
-                        <p className="text-xs font-medium text-gray-400">Qté commandée</p>
-                        <p className="mt-1 text-xl font-bold text-gray-900">{tauxSortie.totaux.qteCommandee.toLocaleString("fr-FR")}</p>
-                      </CardContent>
-                    </Card>
+                  <div className="mb-4 grid gap-4 sm:grid-cols-3">
                     <Card className="border-0 shadow-sm">
                       <CardContent className="pt-4 pb-3">
                         <p className="text-xs font-medium text-gray-400">Qté reçue</p>
@@ -1222,7 +1314,6 @@ export default function AchatPage() {
                               <th className="pb-3 pr-3 font-medium">Genre</th>
                               <th className="pb-3 pr-3 font-medium">Couleur</th>
                               <th className="pb-3 pr-3 font-medium">Rayon / Famille</th>
-                              <th className="pb-3 pr-3 text-right font-medium">Commandé</th>
                               <th className="pb-3 pr-3 text-right font-medium">Reçu</th>
                               <th className="pb-3 pr-3 text-right font-medium">Vendu</th>
                               <th className="pb-3 pr-3 text-right font-medium">Taux sortie</th>
@@ -1234,7 +1325,7 @@ export default function AchatPage() {
                             {tauxSortie.articles.map((a, idx) => (
                               <tr key={`${a.artId}-${a.couleur}-${idx}`} className="border-t border-gray-100 hover:bg-gray-50/50">
                                 <td className="max-w-[200px] truncate py-2.5 pr-3 font-medium">
-                                  <a href={`/articles/${a.artId}`} className="text-indigo-600 hover:text-indigo-800 hover:underline">{a.nom}</a>
+                                  <a href={`/articles/${a.artId}`} className="text-amber-600 hover:text-amber-800 hover:underline">{a.nom}</a>
                                 </td>
                                 <td className="py-2.5 pr-3 text-xs text-gray-500">{a.ref}</td>
                                 <td className="py-2.5 pr-3 text-xs text-gray-500">{a.genre || "—"}</td>
@@ -1242,7 +1333,6 @@ export default function AchatPage() {
                                 <td className="py-2.5 pr-3 text-xs text-gray-500">
                                   {[a.rayon, a.famille].filter(Boolean).join(" / ") || "—"}
                                 </td>
-                                <td className="py-2.5 pr-3 text-right tabular-nums font-semibold text-gray-900">{a.qteCommandee}</td>
                                 <td className="py-2.5 pr-3 text-right tabular-nums text-gray-600">{a.qteRecue}</td>
                                 <td className="py-2.5 pr-3 text-right tabular-nums text-gray-600">{a.qteVendue}</td>
                                 <td className="py-2.5 pr-3 text-right">

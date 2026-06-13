@@ -8,7 +8,8 @@ export async function GET(
 ) {
   try {
     const { nom } = await params;
-    const marque = decodeURIComponent(nom);
+    let marque: string;
+    try { marque = decodeURIComponent(nom); } catch { marque = nom; }
 
     const rows = await query(BRAND_VENTES, [marque]);
     return NextResponse.json(rows);
