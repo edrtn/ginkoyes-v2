@@ -45,8 +45,15 @@ if (existsSync(publicSrc)) {
   cpSync(publicSrc, publicDest, { recursive: true });
 }
 
-// Step 2: Compile Electron TypeScript
-run("npx tsc -p tsconfig.electron.json", "Compiling Electron TypeScript");
+// Step 2: Bundle Electron with esbuild (all deps inlined → no missing modules)
+run(
+  'npx esbuild electron/main.ts --bundle --platform=node --outfile=dist-electron/main.js --external:electron --format=cjs',
+  "Bundling Electron main process"
+);
+run(
+  'npx esbuild electron/preload.ts --bundle --platform=node --outfile=dist-electron/preload.js --external:electron --format=cjs',
+  "Bundling Electron preload"
+);
 
 // Step 3: Package with electron-builder
 run("npx electron-builder", "Packaging with electron-builder");

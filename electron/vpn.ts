@@ -49,7 +49,7 @@ function getBinDir(): string {
   // Dev mode: expect binaries in tailscale-bin/<platform>/
   const platform =
     process.platform === "win32"
-      ? "win32"
+      ? "win"
       : process.platform === "darwin"
         ? "darwin"
         : "linux";

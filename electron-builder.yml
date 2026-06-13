@@ -10,51 +10,10 @@ publish:
   owner: edrtn
   repo: ginkoyes-v2
 
+# esbuild bundle tout dans dist-electron → pas besoin de node_modules
 files:
   - dist-electron/**/*
   - "!node_modules"
-  # Modules requis par le process Electron principal
-  - node_modules/mysql2/**/*
-  - node_modules/aws-ssl-profiles/**/*
-  - node_modules/denque/**/*
-  - node_modules/generate-function/**/*
-  - node_modules/iconv-lite/**/*
-  - node_modules/is-property/**/*
-  - node_modules/long/**/*
-  - node_modules/lru.min/**/*
-  - node_modules/named-placeholders/**/*
-  - node_modules/safer-buffer/**/*
-  - node_modules/seq-queue/**/*
-  - node_modules/sql-escaper/**/*
-  - node_modules/electron-store/**/*
-  - node_modules/conf/**/*
-  - node_modules/ajv/**/*
-  - node_modules/ajv-formats/**/*
-  - node_modules/atomically/**/*
-  - node_modules/debounce-fn/**/*
-  - node_modules/dot-prop/**/*
-  - node_modules/env-paths/**/*
-  - node_modules/fast-deep-equal/**/*
-  - node_modules/fast-json-stable-stringify/**/*
-  - node_modules/find-up/**/*
-  - node_modules/is-obj/**/*
-  - node_modules/json-schema-traverse/**/*
-  - node_modules/json-schema-typed/**/*
-  - node_modules/locate-path/**/*
-  - node_modules/mimic-fn/**/*
-  - node_modules/onetime/**/*
-  - node_modules/p-limit/**/*
-  - node_modules/p-locate/**/*
-  - node_modules/path-exists/**/*
-  - node_modules/pkg-up/**/*
-  - node_modules/punycode/**/*
-  - node_modules/semver/**/*
-  - node_modules/type-fest/**/*
-  - node_modules/uri-js/**/*
-  - node_modules/yocto-queue/**/*
-  - node_modules/socks/**/*
-  - node_modules/smart-buffer/**/*
-  - node_modules/ip-address/**/*
 
 extraResources:
   - from: .next/standalone

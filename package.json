@@ -8,8 +8,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "electron:compile": "tsc -p tsconfig.electron.json",
-    "electron:dev": "tsc -p tsconfig.electron.json && electron .",
+    "electron:compile": "npx esbuild electron/main.ts --bundle --platform=node --outfile=dist-electron/main.js --external:electron --format=cjs && npx esbuild electron/preload.ts --bundle --platform=node --outfile=dist-electron/preload.js --external:electron --format=cjs",
+    "electron:dev": "npm run electron:compile && electron .",
     "electron:build": "node scripts/build-electron.mjs"
   },
   "dependencies": {
