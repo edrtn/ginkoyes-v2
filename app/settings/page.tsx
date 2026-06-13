@@ -33,6 +33,20 @@ interface TestResult {
   error?: string;
 }
 
+interface UpdateCheckResult {
+  updateAvailable: boolean;
+  currentCommit: string;
+  remoteCommit: string;
+  behindCount: number;
+  error?: string;
+}
+
+interface UpdateInstallResult {
+  success: boolean;
+  message: string;
+  logs: string[];
+}
+
 interface ServerResult {
   ip: string;
   articleCount: number;
@@ -101,6 +115,13 @@ export default function SettingsPage() {
   const [vpnLoading, setVpnLoading] = useState(false);
   const [vpnRefreshing, setVpnRefreshing] = useState(false);
   const [vpnSaved, setVpnSaved] = useState(false);
+
+  // --- Update state ---
+  const [updateCheck, setUpdateCheck] = useState<UpdateCheckResult | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [installing, setInstalling] = useState(false);
+  const [installResult, setInstallResult] = useState<UpdateInstallResult | null>(null);
+  const [checkError, setCheckError] = useState("");
 
   // --- Load config on mount ---
   useEffect(() => {
@@ -258,6 +279,45 @@ export default function SettingsPage() {
       }
     } finally {
       setVpnRefreshing(false);
+    }
+  }
+
+  // --- Update helpers ---
+
+  async function handleCheckUpdate() {
+    setChecking(true);
+    setCheckError("");
+    setUpdateCheck(null);
+    setInstallResult(null);
+    try {
+      const res = await fetch("/api/updates/check");
+      const data = await res.json();
+      if (!res.ok) {
+        setCheckError(data.error || "Erreur lors de la verification");
+      } else {
+        setUpdateCheck(data);
+      }
+    } catch (err) {
+      setCheckError(String(err));
+    } finally {
+      setChecking(false);
+    }
+  }
+
+  async function handleInstallUpdate() {
+    setInstalling(true);
+    setInstallResult(null);
+    try {
+      const res = await fetch("/api/updates/install", { method: "POST" });
+      const data = await res.json();
+      setInstallResult(data);
+      if (data.success) {
+        setUpdateCheck(null);
+      }
+    } catch (err) {
+      setInstallResult({ success: false, message: String(err), logs: [] });
+    } finally {
+      setInstalling(false);
     }
   }
 
@@ -600,6 +660,112 @@ export default function SettingsPage() {
             >
               {vpnLoading ? "Arret..." : "Arreter le VPN"}
             </button>
+          )}
+        </div>
+      </div>
+
+      {/* ================================================== */}
+      {/* SECTION 3 : Mises a jour                           */}
+      {/* ================================================== */}
+      <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
+        <div className="border-b border-gray-200 px-6 py-4">
+          <h2 className="text-lg font-semibold text-gray-900">Mises a jour</h2>
+          <p className="mt-0.5 text-sm text-gray-500">
+            Verifier et installer les mises a jour depuis GitHub
+          </p>
+        </div>
+
+        <div className="space-y-4 p-6">
+          {/* Check button + result */}
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleCheckUpdate}
+              disabled={checking}
+              className={btnPrimary}
+            >
+              {checking ? (
+                <span className="flex items-center gap-2">
+                  <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                  Verification...
+                </span>
+              ) : (
+                "Verifier les mises a jour"
+              )}
+            </button>
+
+            {updateCheck && !updateCheck.updateAvailable && (
+              <span className="flex items-center gap-2 text-sm text-green-600">
+                <span className="inline-block h-2 w-2 rounded-full bg-green-500" />
+                A jour ({updateCheck.currentCommit})
+              </span>
+            )}
+          </div>
+
+          {checkError && (
+            <div className="rounded-lg border border-red-200 bg-red-50 p-3">
+              <p className="text-sm text-red-800">{checkError}</p>
+            </div>
+          )}
+
+          {/* Update available */}
+          {updateCheck?.updateAvailable && (
+            <div className="rounded-lg border border-blue-200 bg-blue-50 p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-blue-900">
+                    {updateCheck.behindCount} commit{updateCheck.behindCount > 1 ? "s" : ""} en retard
+                  </p>
+                  <p className="mt-0.5 text-xs text-blue-700">
+                    {updateCheck.currentCommit} → {updateCheck.remoteCommit}
+                  </p>
+                </div>
+                <button
+                  onClick={handleInstallUpdate}
+                  disabled={installing}
+                  className={btnPrimary}
+                >
+                  {installing ? (
+                    <span className="flex items-center gap-2">
+                      <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                      Installation...
+                    </span>
+                  ) : (
+                    "Installer la mise a jour"
+                  )}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Install logs */}
+          {installing && (
+            <div className="flex items-center gap-2 text-sm text-slate-600">
+              <div className="h-4 w-4 animate-spin rounded-full border-2 border-slate-600 border-t-transparent" />
+              Installation en cours (git pull, npm install, build)...
+            </div>
+          )}
+
+          {installResult && (
+            <div
+              className={`rounded-lg border p-4 ${
+                installResult.success
+                  ? "border-green-200 bg-green-50"
+                  : "border-red-200 bg-red-50"
+              }`}
+            >
+              <p
+                className={`text-sm font-medium ${
+                  installResult.success ? "text-green-800" : "text-red-800"
+                }`}
+              >
+                {installResult.message}
+              </p>
+              {installResult.logs.length > 0 && (
+                <pre className="mt-2 max-h-48 overflow-auto rounded bg-gray-900 p-3 text-xs text-gray-100">
+                  {installResult.logs.join("\n")}
+                </pre>
+              )}
+            </div>
           )}
         </div>
       </div>
