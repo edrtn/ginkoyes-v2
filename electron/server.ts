@@ -24,11 +24,8 @@ function waitForServer(port: number, timeoutMs = 30000): Promise<void> {
         return reject(new Error("Server startup timeout"));
       }
       const req = http.get(`http://127.0.0.1:${port}/api/filters`, (res) => {
-        if (res.statusCode && res.statusCode < 500) {
-          resolve();
-        } else {
-          setTimeout(check, 300);
-        }
+        // Any HTTP response means the server is running (DB errors are handled by the UI)
+        resolve();
         res.resume();
       });
       req.on("error", () => setTimeout(check, 300));
