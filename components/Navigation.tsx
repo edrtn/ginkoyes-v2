@@ -49,10 +49,8 @@ export default function Navigation() {
     <aside className="fixed inset-y-0 left-0 z-50 flex w-56 flex-col border-r border-zinc-800 bg-zinc-950">
       {/* Logo */}
       <div className="flex h-14 items-center gap-2 border-b border-zinc-800 px-5">
-        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-violet-500 to-indigo-500">
-          <span className="text-xs font-black text-white">G</span>
-        </div>
-        <span className="text-base font-bold text-white">Ginkoyes</span>
+        <img src="/logo.svg" alt="SportLink" className="h-7 w-7 rounded-lg" />
+        <span className="text-base font-bold text-white">SportLink</span>
       </div>
 
       {/* Nav items */}

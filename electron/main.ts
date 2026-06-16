@@ -42,7 +42,7 @@ function createWindow() {
     height: 900,
     minWidth: 1024,
     minHeight: 700,
-    title: "Ginkoyes",
+    title: "SportLink",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       nodeIntegration: false,
@@ -66,7 +66,7 @@ function createWindow() {
 function createMenu() {
   const template: Electron.MenuItemConstructorOptions[] = [
     {
-      label: "Ginkoyes",
+      label: "SportLink",
       submenu: [
         { label: "A propos", role: "about" },
         { type: "separator" },

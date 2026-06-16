@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1a1a2e"/>
+      <stop offset="100%" stop-color="#16213e"/>
+    </linearGradient>
+  </defs>
+  <!-- Background rounded square -->
+  <rect width="512" height="512" rx="96" fill="url(#bg)"/>
+  <!-- S letter - teal, solid -->
+  <text x="55" y="420" font-family="Arial Black, Arial, Helvetica, sans-serif" font-weight="900" font-size="420" fill="#0d9488">S</text>
+  <!-- L letter - violet, solid, overlapping -->
+  <text x="210" y="400" font-family="Arial Black, Arial, Helvetica, sans-serif" font-weight="900" font-size="380" fill="#7c3aed">L</text>
+</svg>

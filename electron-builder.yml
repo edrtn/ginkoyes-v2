@@ -1,5 +1,5 @@
-appId: com.ginkoyes.app
-productName: Ginkoyes
+appId: com.sportlink.app
+productName: SportLink
 directories:
   output: release
   buildResources: build

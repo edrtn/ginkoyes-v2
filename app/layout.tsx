@@ -16,7 +16,7 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Ginkoyes - Gestion Ginkoia",
+  title: "SportLink - Gestion Ginkoia",
   description: "Application d'exploration des données Ginkoia",
 };
 
