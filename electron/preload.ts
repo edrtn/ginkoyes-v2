@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
 
   // App info
   getVersion: () => ipcRenderer.invoke("get-version"),
+  isPackaged: () => ipcRenderer.invoke("is-packaged"),
 
   // Auto-update
   checkForUpdates: () => ipcRenderer.invoke("check-for-updates"),

@@ -137,6 +137,7 @@ LEFT JOIN NKLRAYON ray ON ray.RAY_ID = fam.FAM_RAYID
 export function buildStockWhere(params: {
   marque?: string;
   rayon?: string;
+  famille?: string;
   collection?: string;
   q?: string;
 }): { where: string; values: unknown[] } {
@@ -157,6 +158,11 @@ export function buildStockWhere(params: {
   if (params.rayon) {
     conditions.push(`UPPER(ray.RAY_NOM) = ?`);
     values.push(params.rayon.toUpperCase());
+  }
+
+  if (params.famille) {
+    conditions.push(`UPPER(fam.FAM_NOM) = ?`);
+    values.push(params.famille.toUpperCase());
   }
 
   if (params.collection) {

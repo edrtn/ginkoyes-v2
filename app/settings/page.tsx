@@ -123,6 +123,9 @@ export default function SettingsPage() {
   const [installResult, setInstallResult] = useState<UpdateInstallResult | null>(null);
   const [checkError, setCheckError] = useState("");
 
+  // --- Is packaged (for update method selection) ---
+  const [isPackaged, setIsPackaged] = useState(false);
+
   // --- Load config on mount ---
   useEffect(() => {
     const api = getApi();
@@ -138,6 +141,9 @@ export default function SettingsPage() {
     api.vpnStatus().then((s: VpnStatus) => {
       if (s) setVpnStatus(s);
     });
+    if (api.isPackaged) {
+      api.isPackaged().then((v: boolean) => setIsPackaged(v));
+    }
   }, []);
 
   // --- Poll VPN status while connecting ---
@@ -282,9 +288,71 @@ export default function SettingsPage() {
     }
   }
 
+  // --- Electron auto-update state ---
+  const [electronUpdateStatus, setElectronUpdateStatus] = useState("");
+  const [electronUpdateAvailable, setElectronUpdateAvailable] = useState(false);
+  const [electronDownloadProgress, setElectronDownloadProgress] = useState<number | null>(null);
+  const [electronUpdateReady, setElectronUpdateReady] = useState(false);
+
+  // Listen for electron-updater events
+  useEffect(() => {
+    const api = getApi();
+    if (!api || !api.onUpdateStatus) return;
+    const unsub = api.onUpdateStatus((data: { status: string; version?: string; percent?: number; error?: string }) => {
+      switch (data.status) {
+        case "checking":
+          setElectronUpdateStatus("Verification...");
+          break;
+        case "available":
+          setElectronUpdateAvailable(true);
+          setElectronUpdateStatus(`Mise a jour v${data.version || ""} disponible`);
+          setChecking(false);
+          break;
+        case "up-to-date":
+          setElectronUpdateAvailable(false);
+          setElectronUpdateStatus("Vous etes a jour");
+          setChecking(false);
+          break;
+        case "downloading":
+          setElectronDownloadProgress(data.percent ?? null);
+          setElectronUpdateStatus("Telechargement...");
+          break;
+        case "ready":
+          setElectronUpdateReady(true);
+          setElectronDownloadProgress(null);
+          setElectronUpdateStatus(`Mise a jour v${data.version || ""} prete. Redemarrez pour appliquer.`);
+          break;
+        case "error":
+          setCheckError(data.error || "Erreur inconnue");
+          setChecking(false);
+          break;
+      }
+    }) as unknown as (() => void);
+    return unsub;
+  }, []);
+
   // --- Update helpers ---
 
   async function handleCheckUpdate() {
+    const api = getApi();
+    if (api && isPackaged) {
+      // Use electron-updater (packaged app only)
+      setChecking(true);
+      setCheckError("");
+      setElectronUpdateStatus("Verification...");
+      setElectronUpdateAvailable(false);
+      setElectronUpdateReady(false);
+      setElectronDownloadProgress(null);
+      try {
+        await api.checkForUpdates();
+      } catch (err) {
+        setCheckError(String(err));
+      } finally {
+        setChecking(false);
+      }
+      return;
+    }
+    // Fallback: git-based check (dev mode)
     setChecking(true);
     setCheckError("");
     setUpdateCheck(null);
@@ -302,6 +370,22 @@ export default function SettingsPage() {
     } finally {
       setChecking(false);
     }
+  }
+
+  async function handleDownloadUpdate() {
+    const api = getApi();
+    if (!api) return;
+    try {
+      await api.downloadUpdate();
+    } catch (err) {
+      setCheckError(String(err));
+    }
+  }
+
+  async function handleInstallElectronUpdate() {
+    const api = getApi();
+    if (!api) return;
+    await api.installUpdate();
   }
 
   async function handleInstallUpdate() {
@@ -671,12 +755,12 @@ export default function SettingsPage() {
         <div className="border-b border-gray-200 px-6 py-4">
           <h2 className="text-lg font-semibold text-gray-900">Mises a jour</h2>
           <p className="mt-0.5 text-sm text-gray-500">
-            Verifier et installer les mises a jour depuis GitHub
+            {isPackaged ? "Verifier et installer les mises a jour" : "Verifier et installer les mises a jour depuis GitHub (git)"}
           </p>
         </div>
 
         <div className="space-y-4 p-6">
-          {/* Check button + result */}
+          {/* Check button */}
           <div className="flex items-center gap-3">
             <button
               onClick={handleCheckUpdate}
@@ -693,7 +777,16 @@ export default function SettingsPage() {
               )}
             </button>
 
-            {updateCheck && !updateCheck.updateAvailable && (
+            {/* Electron packaged: status text */}
+            {isPackaged && electronUpdateStatus && !electronUpdateAvailable && !electronUpdateReady && (
+              <span className="flex items-center gap-2 text-sm text-green-600">
+                <span className="inline-block h-2 w-2 rounded-full bg-green-500" />
+                {electronUpdateStatus}
+              </span>
+            )}
+
+            {/* Dev / Electron dev: git status */}
+            {!isPackaged && updateCheck && !updateCheck.updateAvailable && (
               <span className="flex items-center gap-2 text-sm text-green-600">
                 <span className="inline-block h-2 w-2 rounded-full bg-green-500" />
                 A jour ({updateCheck.currentCommit})
@@ -707,8 +800,41 @@ export default function SettingsPage() {
             </div>
           )}
 
-          {/* Update available */}
-          {updateCheck?.updateAvailable && (
+          {/* Electron packaged: update available → download */}
+          {isPackaged && electronUpdateAvailable && !electronUpdateReady && (
+            <div className="rounded-lg border border-blue-200 bg-blue-50 p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-blue-900">{electronUpdateStatus}</p>
+                  {electronDownloadProgress != null && (
+                    <div className="mt-2 h-2 w-48 rounded-full bg-blue-200">
+                      <div className="h-2 rounded-full bg-blue-600 transition-all" style={{ width: `${electronDownloadProgress}%` }} />
+                    </div>
+                  )}
+                </div>
+                {electronDownloadProgress == null && (
+                  <button onClick={handleDownloadUpdate} className={btnPrimary}>
+                    Telecharger
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Electron packaged: update downloaded → install & restart */}
+          {isPackaged && electronUpdateReady && (
+            <div className="rounded-lg border border-green-200 bg-green-50 p-4">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-medium text-green-800">{electronUpdateStatus}</p>
+                <button onClick={handleInstallElectronUpdate} className={btnPrimary}>
+                  Redemarrer et installer
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Dev / Electron dev: git update available */}
+          {!isPackaged && updateCheck?.updateAvailable && (
             <div className="rounded-lg border border-blue-200 bg-blue-50 p-4">
               <div className="flex items-center justify-between">
                 <div>
@@ -737,15 +863,15 @@ export default function SettingsPage() {
             </div>
           )}
 
-          {/* Install logs */}
-          {installing && (
+          {/* Dev / Electron dev: install logs */}
+          {!isPackaged && installing && (
             <div className="flex items-center gap-2 text-sm text-slate-600">
               <div className="h-4 w-4 animate-spin rounded-full border-2 border-slate-600 border-t-transparent" />
               Installation en cours (git pull, npm install, build)...
             </div>
           )}
 
-          {installResult && (
+          {!isPackaged && installResult && (
             <div
               className={`rounded-lg border p-4 ${
                 installResult.success

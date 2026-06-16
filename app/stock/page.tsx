@@ -274,6 +274,7 @@ export default function StockPage() {
       const rayon = rayons.find((r) => r.RAY_ID === famille.FAM_RAYID);
       const params: Record<string, string> = {};
       if (rayon) params.rayon = rayon.RAY_NOM;
+      params.famille = famille.FAM_NOM;
       const qs = new URLSearchParams(params).toString();
       const res = await fetch(`/api/stock?${qs}`);
       if (!res.ok) throw new Error("Erreur");

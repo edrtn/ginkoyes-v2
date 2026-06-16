@@ -152,6 +152,10 @@ function setupIpcHandlers() {
     return app.getVersion();
   });
 
+  ipcMain.handle("is-packaged", () => {
+    return app.isPackaged;
+  });
+
   // --- VPN handlers ---
 
   ipcMain.handle("get-vpn-config", () => {
