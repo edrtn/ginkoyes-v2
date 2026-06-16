@@ -446,7 +446,7 @@ SELECT
   SUM(sum_pxnet) AS CA_TTC,
   SUM(sum_pxnnht) AS CA_HT,
   SUM(sum_qte) AS QTE,
-  0 AS COUT_TOTAL
+  SUM(sum_cout) AS COUT_TOTAL
 FROM _ventes_daily
 WHERE vente_date >= ? AND vente_date < ?
   AND UPPER(mrk_nom) = ?
@@ -527,9 +527,17 @@ export const ACHAT_VENTES_DETAIL = `
   FROM (
     SELECT 'CAISSE' AS SOURCE, t.TKE_DATE AS DATE_VENTE, t.TKE_NUMERO AS NUMERO,
       l.TKL_ARTID AS ARTID, l.TKL_TGFID AS TGFID, l.TKL_COUID AS COUID,
-      l.TKL_QTE AS QTE, l.TKL_PXBRUT AS PX_BRUT, l.TKL_PXNET AS PX_NET_TTC, l.TKL_PXNNHT AS PX_NET_HT
+      l.TKL_QTE AS QTE, l.TKL_PXBRUT AS PX_BRUT,
+      l.TKL_PXNET * COALESCE(t.TKE_TOTALTTC / NULLIF(tt.sum_lines, 0), 1) AS PX_NET_TTC,
+      l.TKL_PXNNHT * COALESCE(t.TKE_TOTALTTC / NULLIF(tt.sum_lines, 0), 1) AS PX_NET_HT
     FROM CSHTICKETL l
     JOIN CSHTICKET t ON t.TKE_ID = l.TKL_TKEID
+    LEFT JOIN (
+      SELECT TKL_TKEID, SUM(TKL_PXNET) AS sum_lines
+      FROM CSHTICKETL
+      WHERE TKL_ARTID > 0
+      GROUP BY TKL_TKEID
+    ) tt ON tt.TKL_TKEID = l.TKL_TKEID
     WHERE t.TKE_DATE >= ? AND t.TKE_DATE < ?
     UNION ALL
     SELECT 'BL/INTERNET' AS SOURCE, bl.BLE_DATE AS DATE_VENTE, bl.BLE_NUMERO AS NUMERO,
@@ -670,7 +678,7 @@ SELECT
   SUM(sum_pxnet) AS CA_TTC,
   SUM(sum_pxnnht) AS CA_HT,
   SUM(sum_qte) AS QTE,
-  0 AS COUT_TOTAL
+  SUM(sum_cout) AS COUT_TOTAL
 FROM _ventes_daily
 WHERE vente_date >= ? AND vente_date < ?
   AND UPPER(mrk_nom) = ?

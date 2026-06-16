@@ -19,7 +19,7 @@ function buildPeriodData(rows: VenteRow[]) {
 
   const parGenre: Record<
     string,
-    { genre: string; caTtc: number; caHt: number; qte: number; marge: number; prixMoyen: number }
+    { genre: string; caTtc: number; caHt: number; qte: number; cout: number; marge: number; prixMoyen: number }
   > = {};
 
   for (const row of rows) {
@@ -35,13 +35,14 @@ function buildPeriodData(rows: VenteRow[]) {
     totalCout += cout;
 
     if (!parGenre[genre]) {
-      parGenre[genre] = { genre, caTtc: 0, caHt: 0, qte: 0, marge: 0, prixMoyen: 0 };
+      parGenre[genre] = { genre, caTtc: 0, caHt: 0, qte: 0, cout: 0, marge: 0, prixMoyen: 0 };
     }
     parGenre[genre].caTtc += caTtc;
     parGenre[genre].caHt += caHt;
     parGenre[genre].qte += qte;
+    parGenre[genre].cout += cout;
     parGenre[genre].marge = parGenre[genre].caHt > 0
-      ? ((parGenre[genre].caHt - cout) / parGenre[genre].caHt) * 100
+      ? ((parGenre[genre].caHt - parGenre[genre].cout) / parGenre[genre].caHt) * 100
       : 0;
     parGenre[genre].prixMoyen = parGenre[genre].qte > 0
       ? parGenre[genre].caTtc / parGenre[genre].qte

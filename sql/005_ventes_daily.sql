@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS _ventes_daily (
   sum_pxnet    DECIMAL(15,2) NOT NULL DEFAULT 0,
   sum_pxnnht   DECIMAL(15,2) NOT NULL DEFAULT 0,
   sum_pxbrut   DECIMAL(15,2) NOT NULL DEFAULT 0,
+  sum_cout     DECIMAL(15,2) NOT NULL DEFAULT 0,
   nb_lines     INT           NOT NULL DEFAULT 0,
 
   PRIMARY KEY (vente_date, art_id, source),
