@@ -31,8 +31,7 @@ function getDbEnvVars(): Record<string, string> {
     DB_USER: db.user || "ginkoyes",
     DB_PASSWORD: db.password || "ginkoyes",
     DB_NAME: db.database || "ginkoyes",
-    // macOS: use SOCKS tunnel for Tailscale. Windows: direct connection (system service handles routing)
-    DB_TUNNEL_PORT: vpn.enabled && process.platform !== "win32" ? String(TUNNEL_PORT) : "",
+    DB_TUNNEL_PORT: vpn.enabled ? String(TUNNEL_PORT) : "",
   };
 }
 
@@ -196,15 +195,12 @@ function setupIpcHandlers() {
       return { success: false, error: "Aucun hote Tailscale configure" };
     }
 
-    // macOS: start SOCKS tunnel before VPN. Windows: skip (direct routing via system service)
-    if (process.platform !== "win32") {
-      try {
-        console.log("[VPN] Starting tunnel...");
-        await startTunnel(db.tailscaleHost, db.port || 3306, getVpnStatus().socksPort);
-        console.log("[VPN] Tunnel started on port", TUNNEL_PORT);
-      } catch (err) {
-        console.log("[VPN] Tunnel error (may already be running):", err instanceof Error ? err.message : String(err));
-      }
+    try {
+      console.log("[VPN] Starting tunnel...");
+      await startTunnel(db.tailscaleHost, db.port || 3306, getVpnStatus().socksPort);
+      console.log("[VPN] Tunnel started on port", TUNNEL_PORT);
+    } catch (err) {
+      console.log("[VPN] Tunnel error (may already be running):", err instanceof Error ? err.message : String(err));
     }
 
     console.log("[VPN] Starting VPN...");
@@ -528,13 +524,10 @@ app.whenReady().then(async () => {
   const dbCfg = store.get("db");
 
   if (vpnCfg.enabled && vpnCfg.authKey && dbCfg.tailscaleHost) {
-    // macOS: start SOCKS tunnel. Windows: skip (direct routing)
-    if (process.platform !== "win32") {
-      try {
-        await startTunnel(dbCfg.tailscaleHost, dbCfg.port || 3306, getVpnStatus().socksPort);
-      } catch {
-        // Port may be in use — non-fatal
-      }
+    try {
+      await startTunnel(dbCfg.tailscaleHost, dbCfg.port || 3306, getVpnStatus().socksPort);
+    } catch {
+      // Port may be in use — non-fatal
     }
     // Start VPN in background (don't block app startup)
     startVpn(vpnCfg.authKey).catch(() => {

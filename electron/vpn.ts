@@ -1,11 +1,14 @@
 /**
  * Ginkoyes V2 — Embedded Tailscale VPN Manager
  *
- * macOS: Spawns tailscaled in userspace-networking mode with SOCKS5 proxy.
- * Windows: Detects the system Tailscale service (no daemon spawn needed).
+ * Spawns a patched tailscaled in userspace-networking mode with SOCKS5 proxy.
+ * Works without admin rights on both macOS and Windows.
+ *
+ * macOS: uses Unix socket for IPC
+ * Windows: uses named pipe for IPC (patched SDDL + syspolicy bypass)
  */
 
-import { ChildProcess, spawn, execFileSync, execSync } from "child_process";
+import { ChildProcess, spawn, execFileSync } from "child_process";
 import * as path from "path";
 import * as fs from "fs";
 import { app } from "electron";
@@ -27,8 +30,11 @@ export interface VpnStatus {
 // Constants
 // ============================================================
 
-/** SOCKS5 proxy port (macOS only — Windows uses direct Tailscale routing) */
+/** SOCKS5 proxy port used by the embedded tailscaled */
 const SOCKS_PORT = 10055;
+
+/** Named pipe path on Windows (no admin prefix) */
+const WIN_PIPE_PATH = "\\\\.\\pipe\\SportLink-tailscaled";
 
 // ============================================================
 // State
@@ -75,50 +81,19 @@ function getStateDir(): string {
 }
 
 function getSocketPath(): string {
-  if (process.platform === "win32") return "";
+  if (process.platform === "win32") return WIN_PIPE_PATH;
   return path.join(getStateDir(), "tailscaled.sock");
 }
 
 // ============================================================
-// CLI helper — adds --socket flag on Unix
+// CLI helper — adds --socket flag for IPC
 // ============================================================
 
 function runCli(args: string[], timeoutMs: number = 30_000): string {
   const sock = getSocketPath();
   // --socket is a global flag and must come BEFORE the subcommand
-  const fullArgs = sock ? [`--socket=${sock}`, ...args] : args;
+  const fullArgs = [`--socket=${sock}`, ...args];
   return execFileSync(cliBin(), fullArgs, { timeout: timeoutMs }).toString().trim();
-}
-
-// ============================================================
-// Windows: detect system Tailscale service
-// ============================================================
-
-function isWindowsTailscaleRunning(): boolean {
-  try {
-    const out = execSync('tasklist /fi "imagename eq tailscaled.exe" /nh', {
-      timeout: 5000,
-    }).toString();
-    return out.includes("tailscaled.exe");
-  } catch {
-    return false;
-  }
-}
-
-function getWindowsTailscaleIp(): string | null {
-  try {
-    // Use the system tailscale CLI (in PATH or Program Files)
-    const ip = execSync("tailscale ip -4", { timeout: 5000 }).toString().trim();
-    return ip || null;
-  } catch {
-    // Try with our bundled CLI (talks to system service via default pipe)
-    try {
-      const ip = execFileSync(cliBin(), ["ip", "-4"], { timeout: 5000 }).toString().trim();
-      return ip || null;
-    } catch {
-      return null;
-    }
-  }
 }
 
 // ============================================================
@@ -129,46 +104,6 @@ export async function startVpn(authKey: string): Promise<VpnStatus> {
   if (currentStatus.state === "connected" || currentStatus.state === "connecting") {
     return currentStatus;
   }
-
-  // ── Windows: use system Tailscale service ──
-  if (process.platform === "win32") {
-    currentStatus = { state: "connecting", socksPort: SOCKS_PORT };
-
-    if (!isWindowsTailscaleRunning()) {
-      currentStatus = {
-        state: "error",
-        error: "Le service Tailscale n'est pas actif. Installez Tailscale ou demarrez le service.",
-        socksPort: SOCKS_PORT,
-      };
-      return currentStatus;
-    }
-
-    const ip = getWindowsTailscaleIp();
-    if (ip) {
-      currentStatus = { state: "connected", ip, socksPort: SOCKS_PORT };
-    } else {
-      // Service running but not authenticated — try to bring up
-      try {
-        execSync(`tailscale up --auth-key=${authKey} --reset`, { timeout: 30000 });
-        const newIp = getWindowsTailscaleIp();
-        currentStatus = {
-          state: newIp ? "connected" : "error",
-          ip: newIp || undefined,
-          error: newIp ? undefined : "Tailscale up mais pas d'IP attribuee",
-          socksPort: SOCKS_PORT,
-        };
-      } catch (err) {
-        currentStatus = {
-          state: "error",
-          error: `Tailscale up echoue: ${err instanceof Error ? err.message : String(err)}`,
-          socksPort: SOCKS_PORT,
-        };
-      }
-    }
-    return currentStatus;
-  }
-
-  // ── macOS/Linux: spawn embedded tailscaled ──
 
   if (!fs.existsSync(daemonBin())) {
     currentStatus = {
@@ -183,14 +118,16 @@ export async function startVpn(authKey: string): Promise<VpnStatus> {
 
   try {
     const stateDir = getStateDir();
+    const sock = getSocketPath();
+
     const args = [
       "--tun=userspace-networking",
       `--statedir=${stateDir}`,
       `--socks5-server=localhost:${SOCKS_PORT}`,
+      `--socket=${sock}`,
+      "--no-logs-no-support",
+      "--port=0",
     ];
-
-    const sock = getSocketPath();
-    if (sock) args.push(`--socket=${sock}`);
 
     daemon = spawn(daemonBin(), args, { stdio: "pipe" });
 
@@ -205,7 +142,8 @@ export async function startVpn(authKey: string): Promise<VpnStatus> {
       daemon = null;
     });
 
-    await new Promise((r) => setTimeout(r, 2000));
+    // Wait for daemon to start up
+    await new Promise((r) => setTimeout(r, 3000));
 
     if (!daemon || daemon.killed) {
       throw new Error("tailscaled n'a pas demarre");
@@ -226,13 +164,17 @@ export async function startVpn(authKey: string): Promise<VpnStatus> {
 }
 
 export function stopVpn(): void {
-  // On Windows, don't stop the system service
-  if (process.platform === "win32") {
-    currentStatus = { state: "disconnected", socksPort: SOCKS_PORT };
-    return;
-  }
   if (daemon) {
-    daemon.kill("SIGTERM");
+    if (process.platform === "win32") {
+      // On Windows, SIGTERM doesn't work well — use taskkill
+      try {
+        process.kill(daemon.pid!, "SIGTERM");
+      } catch {
+        // ignore
+      }
+    } else {
+      daemon.kill("SIGTERM");
+    }
     daemon = null;
   }
   currentStatus = { state: "disconnected", socksPort: SOCKS_PORT };
