@@ -9,14 +9,13 @@ on:
 jobs:
   build:
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: windows-latest
             target: win
           - os: macos-latest
             target: mac
-          - os: ubuntu-latest
-            target: linux
 
     runs-on: ${{ matrix.os }}
 
@@ -49,7 +48,8 @@ jobs:
           path: |
             release/*.exe
             release/*.dmg
-            release/*.AppImage
+            release/*.zip
+            release/*.yml
           if-no-files-found: ignore
 
   release:
