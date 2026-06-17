@@ -193,6 +193,21 @@ export default function SettingsPage() {
     }
   }
 
+  async function testTailscaleConnection() {
+    const api = getApi();
+    if (!api) return;
+    setTestingTailscale(true);
+    setTailscaleTest(null);
+    try {
+      const result = await api.testDbViaTunnel();
+      setTailscaleTest(result);
+    } catch (err) {
+      setTailscaleTest({ success: false, error: String(err) });
+    } finally {
+      setTestingTailscale(false);
+    }
+  }
+
   async function handleScan() {
     const api = getApi();
     if (!api) return;
@@ -242,8 +257,13 @@ export default function SettingsPage() {
     if (!api) return;
     setVpnLoading(true);
     try {
-      await api.vpnStart();
+      const result = await api.vpnStart();
+      if (!result.success && result.status?.error) {
+        setVpnStatus(result.status);
+      }
       await refreshVpnStatus();
+    } catch (err) {
+      setVpnStatus({ state: "error", error: String(err), socksPort: 0 });
     } finally {
       setVpnLoading(false);
     }
@@ -506,7 +526,7 @@ export default function SettingsPage() {
                   className={inputCls}
                 />
                 <button
-                  onClick={() => testConnection(config.tailscaleHost, setTailscaleTest, setTestingTailscale)}
+                  onClick={() => testTailscaleConnection()}
                   disabled={testingTailscale || !config.tailscaleHost}
                   className={btnSmall}
                 >

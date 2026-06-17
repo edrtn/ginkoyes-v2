@@ -88,7 +88,8 @@ function getSocketPath(): string {
 
 function runCli(args: string[], timeoutMs: number = 30_000): string {
   const sock = getSocketPath();
-  const fullArgs = sock ? [...args, `--socket=${sock}`] : args;
+  // --socket is a global flag and must come BEFORE the subcommand
+  const fullArgs = sock ? [`--socket=${sock}`, ...args] : args;
   return execFileSync(cliBin(), fullArgs, { timeout: timeoutMs }).toString().trim();
 }
 

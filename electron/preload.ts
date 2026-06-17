@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("set-db-config", config),
   testDbConnection: (config: Record<string, unknown>) =>
     ipcRenderer.invoke("test-db-connection", config),
+  testDbViaTunnel: () => ipcRenderer.invoke("test-db-via-tunnel"),
 
   // App info
   getVersion: () => ipcRenderer.invoke("get-version"),

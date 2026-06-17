@@ -23,29 +23,22 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const collectionId = searchParams.get("collectionId");
     const marque = searchParams.get("marque");
-    const from = searchParams.get("from");
-    const to = searchParams.get("to");
 
-    if (!collectionId || !marque || !from || !to) {
+    if (!collectionId || !marque) {
       return NextResponse.json(
-        { error: "Paramètres collectionId, marque, from et to requis" },
+        { error: "Paramètres collectionId et marque requis" },
         { status: 400 }
       );
     }
 
     const colId = Number(collectionId);
     const m = marque.toUpperCase();
-    const cacheKey = `achat-taux:${colId}:${m}:${from}:${to}`;
+    const cacheKey = `achat-taux:${colId}:${m}`;
 
     const result = await cached(cacheKey, async () => {
-      // Params: collectionId, collectionId, fromDate, toDate, fromDate, toDate, marque
+      // Params: collectionId, marque
       const rows = await query<TauxSortieRow>(ACHAT_TAUX_SORTIE, [
         colId,
-        colId,
-        from,
-        to,
-        from,
-        to,
         m,
       ]);
 

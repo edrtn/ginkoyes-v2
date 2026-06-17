@@ -11,7 +11,7 @@ import store, { DbConfig, VpnConfig } from "./store";
 import { startNextServer, stopNextServer } from "./server";
 import { setupAutoUpdater } from "./updater";
 import { startVpn, stopVpn, getVpnStatus } from "./vpn";
-import { startTunnel, stopTunnel, TUNNEL_PORT } from "./tunnel";
+import { startTunnel, stopTunnel, isTunnelRunning, TUNNEL_PORT } from "./tunnel";
 
 let mainWindow: BrowserWindow | null = null;
 let serverPort: number | null = null;
@@ -138,6 +138,32 @@ function setupIpcHandlers() {
     }
   });
 
+  // Test DB via Tailscale tunnel (localhost:13306 → SOCKS5 → remote)
+  ipcMain.handle("test-db-via-tunnel", async () => {
+    const vpnStatus = getVpnStatus();
+    if (vpnStatus.state !== "connected") {
+      return { success: false, error: "VPN non connecte. Demarrez le VPN d'abord." };
+    }
+    if (!isTunnelRunning()) {
+      return { success: false, error: "Tunnel non actif." };
+    }
+    try {
+      const db = store.get("db");
+      const count = await testMariaDbViaChild("127.0.0.1", {
+        port: TUNNEL_PORT,
+        user: db.user,
+        password: db.password,
+        database: db.database,
+      });
+      return { success: true, articleCount: count };
+    } catch (err) {
+      return {
+        success: false,
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
+  });
+
   ipcMain.handle("get-version", () => {
     return app.getVersion();
   });
@@ -159,23 +185,28 @@ function setupIpcHandlers() {
 
   ipcMain.handle("vpn-start", async () => {
     const vpn = store.get("vpn");
+    console.log("[VPN] Start requested. authKey:", vpn.authKey ? "present" : "MISSING");
     if (!vpn.authKey) {
       return { success: false, error: "Aucune auth key configuree" };
     }
 
     const db = store.get("db");
+    console.log("[VPN] tailscaleHost:", db.tailscaleHost || "MISSING");
     if (!db.tailscaleHost) {
       return { success: false, error: "Aucun hote Tailscale configure" };
     }
 
     try {
-      // Start the TCP tunnel (idempotent if already running)
+      console.log("[VPN] Starting tunnel...");
       await startTunnel(db.tailscaleHost, db.port || 3306, getVpnStatus().socksPort);
-    } catch {
-      // Tunnel might already be running — that's OK
+      console.log("[VPN] Tunnel started on port", TUNNEL_PORT);
+    } catch (err) {
+      console.log("[VPN] Tunnel error (may already be running):", err instanceof Error ? err.message : String(err));
     }
 
+    console.log("[VPN] Starting VPN daemon...");
     const status = await startVpn(vpn.authKey);
+    console.log("[VPN] Start result:", status);
     return { success: status.state === "connected", status };
   });
 

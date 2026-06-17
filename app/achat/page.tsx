@@ -220,6 +220,8 @@ export default function AchatPage() {
   // UI
   const [loadingFilters, setLoadingFilters] = useState(true);
   const [loadingData, setLoadingData] = useState(false);
+  const [tauxSortKey, setTauxSortKey] = useState<keyof TauxArticle | "rayFam">("nom");
+  const [tauxSortDir, setTauxSortDir] = useState<"asc" | "desc">("asc");
 
   // Restore from sessionStorage on client mount
   const didRestoreRef = useRef(false);
@@ -433,6 +435,26 @@ export default function AchatPage() {
     setShowDetail(false);
   };
 
+  // ── Tri du tableau taux de sortie ──
+  const sortedTauxArticles = useMemo(() => {
+    if (!tauxSortie) return [];
+    const arr = [...tauxSortie.articles];
+    const dir = tauxSortDir === "asc" ? 1 : -1;
+    arr.sort((a, b) => {
+      let va: string | number, vb: string | number;
+      if (tauxSortKey === "rayFam") {
+        va = [a.rayon, a.famille].filter(Boolean).join(" / ");
+        vb = [b.rayon, b.famille].filter(Boolean).join(" / ");
+      } else {
+        va = a[tauxSortKey];
+        vb = b[tauxSortKey];
+      }
+      if (typeof va === "string") return dir * va.localeCompare(vb as string, "fr");
+      return dir * ((va as number) - (vb as number));
+    });
+    return arr;
+  }, [tauxSortie, tauxSortKey, tauxSortDir]);
+
   // ── Render ──
 
   if (loadingFilters) {
@@ -445,6 +467,18 @@ export default function AchatPage() {
       </div>
     );
   }
+
+  const handleTauxSort = (key: keyof TauxArticle | "rayFam") => {
+    if (tauxSortKey === key) {
+      setTauxSortDir(tauxSortDir === "asc" ? "desc" : "asc");
+    } else {
+      setTauxSortKey(key);
+      setTauxSortDir(key === "nom" || key === "ref" || key === "genre" || key === "couleur" || key === "rayFam" ? "asc" : "desc");
+    }
+  };
+
+  const sortIcon = (key: keyof TauxArticle | "rayFam") =>
+    tauxSortKey === key ? (tauxSortDir === "asc" ? " ▲" : " ▼") : "";
 
   const STEPS = [
     { n: 1, label: "Marque" },
@@ -1268,7 +1302,7 @@ export default function AchatPage() {
                   <div className="mb-4 grid gap-4 sm:grid-cols-3">
                     <Card className="border-0 shadow-sm">
                       <CardContent className="pt-4 pb-3">
-                        <p className="text-xs font-medium text-gray-400">Qté reçue</p>
+                        <p className="text-xs font-medium text-gray-400">Qté commandée</p>
                         <p className="mt-1 text-xl font-bold text-gray-900">{tauxSortie.totaux.qteRecue.toLocaleString("fr-FR")}</p>
                       </CardContent>
                     </Card>
@@ -1309,20 +1343,20 @@ export default function AchatPage() {
                         <table className="w-full text-sm">
                           <thead>
                             <tr className="text-left text-xs uppercase tracking-wider text-gray-400">
-                              <th className="pb-3 pr-3 font-medium">Article</th>
-                              <th className="pb-3 pr-3 font-medium">Réf.</th>
-                              <th className="pb-3 pr-3 font-medium">Genre</th>
-                              <th className="pb-3 pr-3 font-medium">Couleur</th>
-                              <th className="pb-3 pr-3 font-medium">Rayon / Famille</th>
-                              <th className="pb-3 pr-3 text-right font-medium">Reçu</th>
-                              <th className="pb-3 pr-3 text-right font-medium">Vendu</th>
-                              <th className="pb-3 pr-3 text-right font-medium">Taux sortie</th>
-                              <th className="pb-3 pr-3 text-right font-medium">PA net</th>
-                              <th className="pb-3 text-right font-medium">PV</th>
+                              <th className="pb-3 pr-3 font-medium cursor-pointer select-none hover:text-gray-600" onClick={() => handleTauxSort("nom")}>Article{sortIcon("nom")}</th>
+                              <th className="pb-3 pr-3 font-medium cursor-pointer select-none hover:text-gray-600" onClick={() => handleTauxSort("ref")}>Réf.{sortIcon("ref")}</th>
+                              <th className="pb-3 pr-3 font-medium cursor-pointer select-none hover:text-gray-600" onClick={() => handleTauxSort("genre")}>Genre{sortIcon("genre")}</th>
+                              <th className="pb-3 pr-3 font-medium cursor-pointer select-none hover:text-gray-600" onClick={() => handleTauxSort("couleur")}>Couleur{sortIcon("couleur")}</th>
+                              <th className="pb-3 pr-3 font-medium cursor-pointer select-none hover:text-gray-600" onClick={() => handleTauxSort("rayFam")}>Rayon / Famille{sortIcon("rayFam")}</th>
+                              <th className="pb-3 pr-3 text-right font-medium cursor-pointer select-none hover:text-gray-600" onClick={() => handleTauxSort("qteRecue")}>Commandé{sortIcon("qteRecue")}</th>
+                              <th className="pb-3 pr-3 text-right font-medium cursor-pointer select-none hover:text-gray-600" onClick={() => handleTauxSort("qteVendue")}>Vendu{sortIcon("qteVendue")}</th>
+                              <th className="pb-3 pr-3 text-right font-medium cursor-pointer select-none hover:text-gray-600" onClick={() => handleTauxSort("tauxSortie")}>Taux sortie{sortIcon("tauxSortie")}</th>
+                              <th className="pb-3 pr-3 text-right font-medium cursor-pointer select-none hover:text-gray-600" onClick={() => handleTauxSort("montantAchatNet")}>PA net{sortIcon("montantAchatNet")}</th>
+                              <th className="pb-3 text-right font-medium cursor-pointer select-none hover:text-gray-600" onClick={() => handleTauxSort("pxVente")}>PV{sortIcon("pxVente")}</th>
                             </tr>
                           </thead>
                           <tbody>
-                            {tauxSortie.articles.map((a, idx) => (
+                            {sortedTauxArticles.map((a, idx) => (
                               <tr key={`${a.artId}-${a.couleur}-${idx}`} className="border-t border-gray-100 hover:bg-gray-50/50">
                                 <td className="max-w-[200px] truncate py-2.5 pr-3 font-medium">
                                   <a href={`/articles/${a.artId}`} className="text-amber-600 hover:text-amber-800 hover:underline">{a.nom}</a>

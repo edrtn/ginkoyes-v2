@@ -2,32 +2,20 @@ import mysql, { Pool, PoolConnection } from "mysql2/promise";
 import { getConfig } from "./config";
 
 let pool: Pool | null = null;
+let poolType: "lan" | "vpn" | null = null;
+let connectionMode: "local" | "vpn" | "error" | "unknown" = "unknown";
 
-/**
- * Create or return the MariaDB connection pool.
- * Tries LAN host first, falls back to Tailscale host.
- */
-function getPool(): Pool {
-  if (pool) return pool;
-
-  const config = getConfig();
-
-  pool = mysql.createPool({
-    host: config.lanHost,
-    port: config.port,
-    user: config.user,
-    password: config.password,
-    database: config.database,
-    waitForConnections: true,
-    connectionLimit: 10,
-    connectTimeout: 5000,
-    // MariaDB compatible settings
-    charset: "utf8mb4",
-    decimalNumbers: true,
-  });
-
-  return pool;
+export function getConnectionMode() {
+  return connectionMode;
 }
+
+const POOL_COMMON = {
+  waitForConnections: true,
+  connectionLimit: 10,
+  connectTimeout: 5000,
+  charset: "utf8mb4" as const,
+  decimalNumbers: true,
+};
 
 /**
  * Reset the pool (used on config change or connection failure).
@@ -40,6 +28,7 @@ export async function resetPool(): Promise<void> {
       // Ignore close errors
     }
     pool = null;
+    poolType = null;
   }
 }
 
@@ -49,37 +38,54 @@ export async function resetPool(): Promise<void> {
 async function getConnectionWithFailover(): Promise<PoolConnection> {
   const config = getConfig();
 
+  // If we already have a working pool, reuse it
+  if (pool) {
+    try {
+      const conn = await pool.getConnection();
+      connectionMode = poolType === "vpn" ? "vpn" : "local";
+      return conn;
+    } catch {
+      await resetPool();
+    }
+  }
+
   // Try LAN first
   try {
-    const p = getPool();
-    const conn = await p.getConnection();
-    return conn;
-  } catch {
-    // LAN failed — try Tailscale/tunnel if configured
-    if (!config.tailscaleHost && !config.tunnelPort) {
-      throw new Error("Connexion LAN échouée, aucun hôte Tailscale configuré");
-    }
-
-    await resetPool();
-
-    // If a VPN tunnel is active, connect through it (localhost:tunnelPort)
-    // Otherwise, connect directly to the Tailscale IP
-    const usesTunnel = config.tunnelPort > 0;
-
     pool = mysql.createPool({
-      host: usesTunnel ? "127.0.0.1" : config.tailscaleHost,
-      port: usesTunnel ? config.tunnelPort : config.port,
+      host: config.lanHost,
+      port: config.port,
       user: config.user,
       password: config.password,
       database: config.database,
-      waitForConnections: true,
-      connectionLimit: 10,
-      connectTimeout: 5000,
-      charset: "utf8mb4",
+      ...POOL_COMMON,
     });
-
-    return pool.getConnection();
+    poolType = "lan";
+    const conn = await pool.getConnection();
+    connectionMode = "local";
+    return conn;
+  } catch {
+    await resetPool();
   }
+
+  // LAN failed — try Tailscale/tunnel if configured
+  if (!config.tailscaleHost && !config.tunnelPort) {
+    throw new Error("Connexion LAN échouée, aucun hôte Tailscale configuré");
+  }
+
+  const usesTunnel = config.tunnelPort > 0;
+
+  pool = mysql.createPool({
+    host: usesTunnel ? "127.0.0.1" : config.tailscaleHost,
+    port: usesTunnel ? config.tunnelPort : config.port,
+    user: config.user,
+    password: config.password,
+    database: config.database,
+    ...POOL_COMMON,
+  });
+  poolType = "vpn";
+  const conn = await pool.getConnection();
+  connectionMode = "vpn";
+  return conn;
 }
 
 const MAX_RETRIES = 3;
@@ -108,6 +114,7 @@ export async function query<T = Record<string, unknown>>(
     }
   }
 
+  connectionMode = "error";
   throw lastError;
 }
 

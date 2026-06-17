@@ -4,6 +4,7 @@ import "./globals.css";
 import Navigation from "@/components/Navigation";
 import UpdateBanner from "@/components/UpdateBanner";
 import ConnectionGuard from "@/components/ConnectionGuard";
+import ConnectionIndicator from "@/components/ConnectionIndicator";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -32,6 +33,7 @@ export default function RootLayout({
     >
       <body className="min-h-full bg-mesh">
         <ConnectionGuard />
+        <ConnectionIndicator />
         <Navigation />
         <div className="ml-56">
           <UpdateBanner />
