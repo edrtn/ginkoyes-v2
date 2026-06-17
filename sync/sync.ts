@@ -1,13 +1,14 @@
 /**
- * Ginkoyes V2 — Script de synchronisation nightly
+ * SportLink Server — Script de synchronisation nightly
  *
  * Flux :
- * 1. gbak -c pour restaurer SV.GBK → temp_sync.fdb
- * 2. Connexion Firebird au FDB temporaire
- * 3. Pour chaque table : TRUNCATE + INSERT batch dans MariaDB
- * 4. Mise à jour _sync_meta
- * 5. Suppression du FDB temporaire
- * 6. Logging dans fichier
+ * 1. Copie GBK depuis le partage réseau → local
+ * 2. gbak -c pour restaurer SV.GBK → temp_sync.fdb
+ * 3. Connexion Firebird au FDB temporaire
+ * 4. Pour chaque table : TRUNCATE + INSERT batch dans MariaDB
+ * 5. Mise à jour _sync_meta
+ * 6. Suppression du FDB temporaire
+ * 7. Logging dans fichier
  *
  * Usage CLI : npx tsx sync/sync.ts
  * Usage service : import { runSync } from './sync'
@@ -26,7 +27,10 @@ import mysql from "mysql2/promise";
 
 export interface SyncConfig {
   firebird: {
-    gbkPath: string;
+    gbkSourcePath?: string;
+    gbkLocalPath: string;
+    /** @deprecated Use gbkLocalPath instead */
+    gbkPath?: string;
     tempFdbPath: string;
     gbakPath: string;
     user: string;
@@ -147,11 +151,51 @@ const TABLES: TableDef[] = [
 ];
 
 // ============================================================
+// Config migration helper
+// ============================================================
+
+function getGbkLocalPath(cfg: SyncConfig): string {
+  return cfg.firebird.gbkLocalPath || cfg.firebird.gbkPath || "";
+}
+
+// ============================================================
+// Copy GBK from network share to local
+// ============================================================
+
+function copyGbk(cfg: SyncConfig, log: (msg: string) => void): void {
+  const { gbkSourcePath } = cfg.firebird;
+  const gbkLocalPath = getGbkLocalPath(cfg);
+
+  if (!gbkSourcePath) {
+    log("Pas de gbkSourcePath configuré, utilisation directe du fichier local");
+    return;
+  }
+
+  if (!fs.existsSync(gbkSourcePath)) {
+    throw new Error(`Fichier source introuvable : ${gbkSourcePath}`);
+  }
+
+  // Créer le dossier de destination si nécessaire
+  const destDir = path.dirname(gbkLocalPath);
+  if (!fs.existsSync(destDir)) {
+    fs.mkdirSync(destDir, { recursive: true });
+  }
+
+  log(`Copie GBK : ${gbkSourcePath} → ${gbkLocalPath}`);
+  const start = Date.now();
+  fs.copyFileSync(gbkSourcePath, gbkLocalPath);
+  const sizeMB = Math.round(fs.statSync(gbkLocalPath).size / 1024 / 1024);
+  const durationSec = Math.round((Date.now() - start) / 1000);
+  log(`Copie terminée : ${sizeMB} Mo en ${durationSec}s`);
+}
+
+// ============================================================
 // Restore GBK → FDB temp
 // ============================================================
 
 function restoreGbk(cfg: SyncConfig, log: (msg: string) => void): void {
-  const { gbakPath, gbkPath, tempFdbPath, user, password } = cfg.firebird;
+  const { gbakPath, tempFdbPath, user, password } = cfg.firebird;
+  const gbkLocalPath = getGbkLocalPath(cfg);
 
   // Nettoyage du FDB temporaire précédent (peut être verrouillé par Firebird)
   if (fs.existsSync(tempFdbPath)) {
@@ -174,10 +218,10 @@ function restoreGbk(cfg: SyncConfig, log: (msg: string) => void): void {
     }
   }
 
-  log(`Restauration GBK : ${gbkPath} → ${tempFdbPath}`);
+  log(`Restauration GBK : ${gbkLocalPath} → ${tempFdbPath}`);
   // -REP pour écraser un FDB existant (si verrouillé et non supprimable)
   const replaceFlag = fs.existsSync(tempFdbPath) ? "-REP" : "-c";
-  const cmd = `"${gbakPath}" ${replaceFlag} -FIX_FSS_METADATA WIN1252 -FIX_FSS_DATA WIN1252 -page_size 16384 -user ${user} -password ${password} "${gbkPath}" "${tempFdbPath}"`;
+  const cmd = `"${gbakPath}" ${replaceFlag} -FIX_FSS_METADATA WIN1252 -FIX_FSS_DATA WIN1252 -page_size 16384 -user ${user} -password ${password} "${gbkLocalPath}" "${tempFdbPath}"`;
   log(`gbak mode: ${replaceFlag}`);
   try {
     execSync(cmd, { stdio: "pipe", timeout: 43_200_000 }); // 12h max
@@ -432,10 +476,13 @@ export async function runSync(cfg: SyncConfig): Promise<SyncResult> {
   const syncId = (metaResult as mysql.ResultSetHeader).insertId;
 
   try {
-    // Step 1 : Restore GBK
+    // Step 1 : Copy GBK from network share (if configured)
+    copyGbk(cfg, log);
+
+    // Step 2 : Restore GBK
     restoreGbk(cfg, log);
 
-    // Step 2 : Sync each table via isql CLI
+    // Step 3 : Sync each table via isql CLI
     let totalRows = 0;
     let tablesSynced = 0;
 

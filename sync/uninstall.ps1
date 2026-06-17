@@ -1,7 +1,7 @@
 # ============================================================
-# Ginkoyes V2 - Desinstalleur
+# SportLink Server - Desinstalleur
 #
-# Arrete et supprime le service Windows GinkoyesSync.
+# Arrete et supprime le service Windows SportLinkSync.
 # Supprime le repertoire d'installation (apres confirmation).
 # NE desinstalle PAS MariaDB ni Tailscale.
 #
@@ -12,11 +12,11 @@
 
 $ErrorActionPreference = "Stop"
 
-$DefaultInstallDir = "C:\Ginkoyes"
+$DefaultInstallDir = "C:\sportlink-serveur"
 
 Write-Host ""
 Write-Host "========================================" -ForegroundColor Red
-Write-Host "  Ginkoyes V2 - Desinstallation" -ForegroundColor Red
+Write-Host "  SportLink Server - Desinstallation" -ForegroundColor Red
 Write-Host "========================================" -ForegroundColor Red
 Write-Host ""
 
@@ -31,10 +31,10 @@ Write-Host ""
 Write-Host "[1/3] Arret du service..." -ForegroundColor Yellow
 
 # Try to stop via Windows services
-$svc = Get-Service -Name "GinkoyesSync" -ErrorAction SilentlyContinue
+$svc = Get-Service -Name "SportLinkSync" -ErrorAction SilentlyContinue
 if ($svc) {
     if ($svc.Status -eq "Running") {
-        Stop-Service -Name "GinkoyesSync" -Force
+        Stop-Service -Name "SportLinkSync" -Force
         Write-Host "  [OK] Service arrete" -ForegroundColor Green
     } else {
         Write-Host "  Service deja arrete" -ForegroundColor Gray
@@ -57,11 +57,11 @@ if (Test-Path $installServiceJs) {
     } catch {
         Write-Host "  Desenregistrement echoue : $_" -ForegroundColor Red
         Write-Host "  Tentative via sc.exe..." -ForegroundColor Gray
-        sc.exe delete GinkoyesSync 2>$null
+        sc.exe delete SportLinkSync 2>$null
     }
 } else {
     Write-Host "  install-service.js non trouve, tentative via sc.exe..." -ForegroundColor Gray
-    sc.exe delete GinkoyesSync 2>$null
+    sc.exe delete SportLinkSync 2>$null
 }
 
 # ============================================================

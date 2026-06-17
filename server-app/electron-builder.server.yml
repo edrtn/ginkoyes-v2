@@ -1,5 +1,5 @@
-appId: com.ginkoyes.serveur
-productName: Ginkoyes Serveur
+appId: com.sportlink.server
+productName: SportLink Server
 directories:
   output: release
 files:
@@ -27,4 +27,4 @@ nsis:
   oneClick: false
   perMachine: true
   allowToChangeInstallationDirectory: true
-  artifactName: "Ginkoyes Serveur Setup ${version}.exe"
+  artifactName: "SportLink Server Setup ${version}.exe"

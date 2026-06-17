@@ -135,8 +135,8 @@ async function loadServiceStatus() {
     elServiceStatus.className = 'badge badge-error';
     elServiceStatus.textContent = 'Arrete';
   }
-  // Prochaine sync : on affiche 23:10 par defaut (lu depuis le service)
-  elNextSync.textContent = '23:10';
+  // Prochaine sync : on affiche 02:00 par defaut (lu depuis le service)
+  elNextSync.textContent = '02:00';
 }
 
 async function loadVpnStatus() {

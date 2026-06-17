@@ -7,7 +7,7 @@ param(
 )
 
 # ============================================================
-# Ginkoyes V2 - Installeur tout-en-un
+# SportLink Server - Installeur tout-en-un
 #
 # Installe : Node.js, MariaDB, Tailscale, BDD, service sync
 # Usage : powershell -ExecutionPolicy Bypass -File setup.ps1
@@ -27,9 +27,9 @@ $NonInteractive = -not [string]::IsNullOrWhiteSpace($GbkFilePath)
 # Variables globales
 # ============================================================
 
-$DefaultGbkPath = "C:\Ginkoia\Backup\SV.GBK"
-$DefaultInstallDir = "C:\Ginkoyes"
-$DefaultSyncTime = "23:10"
+$DefaultGbkPath = "\\SERVEUR\Backup\SV.GBK"
+$DefaultInstallDir = "C:\sportlink-serveur"
+$DefaultSyncTime = "02:00"
 $MariaDBVersion = "11.4.5"
 $NodeVersion = "20.18.1"
 $DbName = "ginkoyes"
@@ -43,7 +43,7 @@ $DbPassword = "ginkoyes"
 function Write-Banner {
     Write-Host ""
     Write-Host "========================================" -ForegroundColor Cyan
-    Write-Host "  Ginkoyes V2 - Installation" -ForegroundColor Cyan
+    Write-Host "  SportLink Server - Installation" -ForegroundColor Cyan
     Write-Host "========================================" -ForegroundColor Cyan
     Write-Host ""
 }
@@ -472,11 +472,11 @@ ON DUPLICATE KEY UPDATE
 }
 
 # ============================================================
-# [6/7] Service Ginkoyes
+# [6/7] Service SportLink
 # ============================================================
 
 function Step-Service {
-    Write-Step 6 7 "Service Ginkoyes"
+    Write-Step 6 7 "Service SportLink"
 
     # Create install directory
     if (-not (Test-Path $script:InstallDir)) {
@@ -511,6 +511,12 @@ function Step-Service {
     }
     Write-Ok "Fichiers copies"
 
+    # Create backup directory
+    $backupDir = Join-Path $script:InstallDir "backup"
+    if (-not (Test-Path $backupDir)) {
+        New-Item -Path $backupDir -ItemType Directory -Force | Out-Null
+    }
+
     # Parse sync time
     $timeParts = $script:SyncTime -split ":"
     $hour = [int]$timeParts[0]
@@ -518,13 +524,13 @@ function Step-Service {
     $cronExpr = "$minute $hour * * *"
 
     # Generate sync-config.json
-    $tempFdbDir = Split-Path -Parent $script:GbkPath
-    $tempFdbPath = Join-Path $tempFdbDir "temp_sync.fdb"
+    $tempFdbPath = Join-Path $backupDir "temp_sync.fdb"
     $logPath = Join-Path $logsDir "sync.log"
 
     $configObj = @{
         firebird = @{
-            gbkPath = $script:GbkPath
+            gbkSourcePath = $script:GbkPath
+            gbkLocalPath = Join-Path $script:InstallDir "backup\SV.GBK"
             tempFdbPath = $tempFdbPath
             gbakPath = $script:GbakPath
             user = "SYSDBA"
@@ -550,7 +556,7 @@ function Step-Service {
 
     # Create package.json for the service
     $pkgJson = @{
-        name = "ginkoyes-sync"
+        name = "sportlink-sync"
         version = "1.0.0"
         private = $true
         dependencies = @{
@@ -598,7 +604,7 @@ function Step-Service {
     try {
         node dist\install-service.js 2>&1
         Start-Sleep -Seconds 3
-        Write-Ok "Service GinkoyesSync installe et demarre"
+        Write-Ok "Service SportLinkSync installe et demarre"
     } catch {
         Write-Err "Installation du service echouee : $_"
         Write-Info "Vous pouvez l'installer manuellement : node dist\install-service.js"
@@ -613,7 +619,7 @@ function Step-Service {
 function Step-FirstSync {
     Write-Step 7 7 "Premiere synchronisation"
     Write-Info "La premiere synchronisation n'est pas lancee automatiquement."
-    Write-Info "Ouvrez 'Ginkoyes Serveur' depuis le bureau et cliquez sur 'Lancer sync'."
+    Write-Info "Ouvrez 'SportLink Server' depuis le bureau et cliquez sur 'Lancer sync'."
 }
 
 # ============================================================
@@ -626,7 +632,7 @@ function Show-Summary {
     Write-Host "  Installation terminee !" -ForegroundColor Green
     Write-Host "========================================" -ForegroundColor Green
     Write-Host ""
-    Write-Host "  Service : GinkoyesSync (services.msc)" -ForegroundColor White
+    Write-Host "  Service : SportLinkSync (services.msc)" -ForegroundColor White
     Write-Host "  Config  : $($script:InstallDir)\sync-config.json" -ForegroundColor White
     Write-Host "  Logs    : $($script:InstallDir)\logs\sync.log" -ForegroundColor White
     Write-Host "  Sync    : tous les jours a $($script:SyncTime)" -ForegroundColor White
@@ -637,8 +643,8 @@ function Show-Summary {
 
     Write-Host ""
     Write-Host "  Commandes utiles :" -ForegroundColor Gray
-    Write-Host "    Get-Service GinkoyesSync          # Etat du service" -ForegroundColor Gray
-    Write-Host "    Restart-Service GinkoyesSync       # Redemarrer" -ForegroundColor Gray
+    Write-Host "    Get-Service SportLinkSync          # Etat du service" -ForegroundColor Gray
+    Write-Host "    Restart-Service SportLinkSync       # Redemarrer" -ForegroundColor Gray
     Write-Host "    type $($script:InstallDir)\logs\sync.log  # Voir les logs" -ForegroundColor Gray
     Write-Host ""
 }

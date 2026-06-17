@@ -1,12 +1,12 @@
 # ============================================================
-# Ginkoyes V2 - Installation tache planifiee Windows
-# Execute la synchronisation chaque nuit a 23h10
+# SportLink Server - Installation tache planifiee Windows
+# Execute la synchronisation chaque nuit a 02h00
 # Usage : Executer en tant qu'administrateur
 #   powershell -ExecutionPolicy Bypass -File install-task.ps1
 # ============================================================
 
-$TaskName = "Ginkoyes-Sync-Nightly"
-$Description = "Synchronisation nightly Ginkoia (Firebird) vers MariaDB pour Ginkoyes V2"
+$TaskName = "SportLink-Sync-Nightly"
+$Description = "Synchronisation nightly Ginkoia (Firebird) vers MariaDB pour SportLink Server"
 
 # Chemin vers le script de sync (ajuster selon l'installation)
 $SyncDir = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -21,10 +21,10 @@ $Action = New-ScheduledTaskAction `
     -Argument "tsx `"$ScriptPath`"" `
     -WorkingDirectory $ProjectRoot
 
-# Declencheur : chaque jour a 23h10
+# Declencheur : chaque jour a 02h00
 $Trigger = New-ScheduledTaskTrigger `
     -Daily `
-    -At "23:10"
+    -At "02:00"
 
 # Parametres : executer meme si l'utilisateur n'est pas connecte
 $Settings = New-ScheduledTaskSettingsSet `
@@ -51,7 +51,7 @@ Register-ScheduledTask `
 
 Write-Host ""
 Write-Host "Tache planifiee '$TaskName' installee avec succes."
-Write-Host "  Heure : 23h10 chaque jour"
+Write-Host "  Heure : 02h00 chaque jour"
 Write-Host "  Script : $ScriptPath"
 Write-Host ""
 Write-Host "Pour verifier : Get-ScheduledTask -TaskName '$TaskName'"

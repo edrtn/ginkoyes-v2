@@ -1,6 +1,6 @@
-#define MyAppName "Ginkoyes Serveur"
-#define MyAppVersion "1.3.2"
-#define MyAppPublisher "Ginkoyes"
+#define MyAppName "SportLink Server"
+#define MyAppVersion "2.0.0"
+#define MyAppPublisher "SportLink"
 #define MyAppURL "https://github.com/edrtn/ginkoyes-v2"
 
 [Setup]
@@ -9,10 +9,10 @@ AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
 AppSupportURL={#MyAppURL}
-DefaultDirName=C:\Ginkoyes
+DefaultDirName=C:\sportlink-serveur
 DefaultGroupName={#MyAppName}
 OutputDir=..\release
-OutputBaseFilename=GinkoyesServeur-Setup-{#MyAppVersion}
+OutputBaseFilename=SportLinkServer-Setup-{#MyAppVersion}
 Compression=lzma
 SolidCompression=yes
 PrivilegesRequired=admin
@@ -41,8 +41,8 @@ Source: "..\server-app\release\win-unpacked\*"; DestDir: "{app}\gui"; Flags: ign
 Source: "..\sql\*.sql"; DestDir: "{app}\sql"; Flags: ignoreversion
 
 [Icons]
-Name: "{group}\{#MyAppName}"; Filename: "{app}\gui\Ginkoyes Serveur.exe"
-Name: "{commondesktop}\{#MyAppName}"; Filename: "{app}\gui\Ginkoyes Serveur.exe"
+Name: "{group}\{#MyAppName}"; Filename: "{app}\gui\SportLink Server.exe"
+Name: "{commondesktop}\{#MyAppName}"; Filename: "{app}\gui\SportLink Server.exe"
 Name: "{group}\Desinstaller {#MyAppName}"; Filename: "{uninstallexe}"
 
 [UninstallRun]
@@ -121,7 +121,7 @@ end;
 // -------------------------------------------------------
 procedure InitializeWizard;
 var
-  LabelGbk, LabelGbak: TNewStaticText;
+  LabelGbk, LabelGbkDesc, LabelGbak: TNewStaticText;
   LabelSync, LabelSyncDesc: TNewStaticText;
   LabelTs, LabelTsDesc: TNewStaticText;
   DetectedGbak: String;
@@ -136,7 +136,7 @@ begin
   // Label GBK
   LabelGbk := TNewStaticText.Create(FirebirdPage);
   LabelGbk.Parent := FirebirdPage.Surface;
-  LabelGbk.Caption := 'Chemin vers le fichier SV.GBK :';
+  LabelGbk.Caption := 'Chemin reseau vers le fichier SV.GBK (source) :';
   LabelGbk.Top := 0;
   LabelGbk.Left := 0;
 
@@ -146,7 +146,7 @@ begin
   GbkFileEdit.Top := LabelGbk.Top + LabelGbk.Height + 6;
   GbkFileEdit.Left := 0;
   GbkFileEdit.Width := FirebirdPage.SurfaceWidth - 90;
-  GbkFileEdit.Text := 'C:\Ginkoia\Backup\SV.GBK';
+  GbkFileEdit.Text := '\\SERVEUR\Backup\SV.GBK';
 
   // Bouton Parcourir GBK
   GbkBrowseButton := TNewButton.Create(FirebirdPage);
@@ -157,11 +157,19 @@ begin
   GbkBrowseButton.Width := 80;
   GbkBrowseButton.OnClick := @GbkBrowseClick;
 
+  // Label explicatif
+  LabelGbkDesc := TNewStaticText.Create(FirebirdPage);
+  LabelGbkDesc.Parent := FirebirdPage.Surface;
+  LabelGbkDesc.Caption := 'Chemin reseau du backup Ginkoia (ex: \\SERVEUR\Backup\SV.GBK). Il sera copie en local avant chaque sync.';
+  LabelGbkDesc.Top := GbkFileEdit.Top + GbkFileEdit.Height + 6;
+  LabelGbkDesc.Left := 0;
+  LabelGbkDesc.Font.Color := clGray;
+
   // Label gbak.exe
   LabelGbak := TNewStaticText.Create(FirebirdPage);
   LabelGbak.Parent := FirebirdPage.Surface;
   LabelGbak.Caption := 'Chemin vers gbak.exe :';
-  LabelGbak.Top := GbkFileEdit.Top + GbkFileEdit.Height + 20;
+  LabelGbak.Top := LabelGbkDesc.Top + LabelGbkDesc.Height + 20;
   LabelGbak.Left := 0;
 
   // Edit gbak.exe
@@ -205,7 +213,7 @@ begin
   SyncTimeEdit.Top := LabelSync.Top + LabelSync.Height + 6;
   SyncTimeEdit.Left := 0;
   SyncTimeEdit.Width := 80;
-  SyncTimeEdit.Text := '23:10';
+  SyncTimeEdit.Text := '02:00';
 
   LabelSyncDesc := TNewStaticText.Create(SyncPage);
   LabelSyncDesc.Parent := SyncPage.Surface;
@@ -269,7 +277,7 @@ begin
   begin
     if Trim(SyncTimeEdit.Text) = '' then
     begin
-      MsgBox('Veuillez indiquer une heure de synchronisation (ex: 23:10).', mbError, MB_OK);
+      MsgBox('Veuillez indiquer une heure de synchronisation (ex: 02:00).', mbError, MB_OK);
       Result := False;
       Exit;
     end;
@@ -301,7 +309,7 @@ begin
       ' -SyncTime "' + EscapeParam(SyncTimeEdit.Text) + '"' +
       ' -TailscaleKey "' + EscapeParam(TailscaleKeyEdit.Text) + '"';
 
-    WizardForm.StatusLabel.Caption := 'Configuration du serveur Ginkoyes en cours...';
+    WizardForm.StatusLabel.Caption := 'Configuration de SportLink Server en cours...';
 
     Exec('powershell.exe', Params, ExpandConstant('{app}'), SW_HIDE, ewWaitUntilTerminated, ResultCode);
 

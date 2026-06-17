@@ -19,11 +19,11 @@ interface SyncConfig {
   };
 }
 
-const GINKOYES_DIR = 'C:\\Ginkoyes';
+const SPORTLINK_DIR = 'C:\\sportlink-serveur';
 
 function getConfigPath(): string {
-  // 1. C:\Ginkoyes (deploye)
-  const deployed = path.join(GINKOYES_DIR, 'sync-config.json');
+  // 1. C:\sportlink-serveur (deploye)
+  const deployed = path.join(SPORTLINK_DIR, 'sync-config.json');
   if (fs.existsSync(deployed)) return deployed;
 
   // 2. Resources Electron (bundled)
@@ -44,8 +44,8 @@ function loadConfig(): SyncConfig {
 }
 
 function getInstallDir(): string {
-  // 1. C:\Ginkoyes (deploye)
-  if (fs.existsSync(path.join(GINKOYES_DIR, 'sync-config.json'))) return GINKOYES_DIR;
+  // 1. C:\sportlink-serveur (deploye)
+  if (fs.existsSync(path.join(SPORTLINK_DIR, 'sync-config.json'))) return SPORTLINK_DIR;
   // 2. Resources Electron (bundled)
   if (fs.existsSync(path.join(process.resourcesPath, 'sync', 'sync-config.json'))) return path.join(process.resourcesPath, 'sync');
   // 3. Dev
@@ -58,13 +58,13 @@ function deployFiles(): void {
   const syncDir = path.join(process.resourcesPath, 'sync');
   if (!fs.existsSync(syncDir)) return;
 
-  // Creer C:\Ginkoyes et sous-dossiers
-  for (const dir of [GINKOYES_DIR, path.join(GINKOYES_DIR, 'dist'), path.join(GINKOYES_DIR, 'logs'), path.join(GINKOYES_DIR, 'sql')]) {
+  // Creer C:\sportlink-serveur et sous-dossiers
+  for (const dir of [SPORTLINK_DIR, path.join(SPORTLINK_DIR, 'dist'), path.join(SPORTLINK_DIR, 'logs'), path.join(SPORTLINK_DIR, 'sql')]) {
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   }
 
   // Copier sync-config.json (seulement si absent — ne pas ecraser la config utilisateur)
-  const cfgDest = path.join(GINKOYES_DIR, 'sync-config.json');
+  const cfgDest = path.join(SPORTLINK_DIR, 'sync-config.json');
   if (!fs.existsSync(cfgDest)) {
     const cfgSrc = path.join(syncDir, 'sync-config.json');
     if (fs.existsSync(cfgSrc)) fs.copyFileSync(cfgSrc, cfgDest);
@@ -74,7 +74,7 @@ function deployFiles(): void {
   const distSrc = path.join(syncDir, 'dist');
   if (fs.existsSync(distSrc)) {
     for (const file of fs.readdirSync(distSrc)) {
-      fs.copyFileSync(path.join(distSrc, file), path.join(GINKOYES_DIR, 'dist', file));
+      fs.copyFileSync(path.join(distSrc, file), path.join(SPORTLINK_DIR, 'dist', file));
     }
   }
 
@@ -82,7 +82,7 @@ function deployFiles(): void {
   const sqlSrc = path.join(process.resourcesPath, 'sql');
   if (fs.existsSync(sqlSrc)) {
     for (const file of fs.readdirSync(sqlSrc)) {
-      fs.copyFileSync(path.join(sqlSrc, file), path.join(GINKOYES_DIR, 'sql', file));
+      fs.copyFileSync(path.join(sqlSrc, file), path.join(SPORTLINK_DIR, 'sql', file));
     }
   }
 }
@@ -114,7 +114,7 @@ function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 800,
     height: 600,
-    title: 'Ginkoyes Serveur',
+    title: 'SportLink Server',
     resizable: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -298,10 +298,10 @@ function registerIpcHandlers(): void {
     return { success: true };
   });
 
-  // 5. get-service-status : sc query GinkoyesSync
+  // 5. get-service-status : sc query SportLinkSync
   ipcMain.handle('get-service-status', async () => {
     return new Promise((resolve) => {
-      execFile('sc', ['query', 'ginkoyessync.exe'], (err, stdout, stderr) => {
+      execFile('sc', ['query', 'sportlinksync.exe'], (err, stdout, stderr) => {
         if (err) {
           resolve({ running: false, output: stderr || err.message });
           return;

@@ -1,7 +1,8 @@
 {
   "firebird": {
-    "gbkPath": "C:\\Ginkoia\\Backup\\SV.GBK",
-    "tempFdbPath": "C:\\Ginkoia\\Backup\\temp_sync.fdb",
+    "gbkSourcePath": "\\\\SERVEUR\\Backup\\SV.GBK",
+    "gbkLocalPath": "C:\\sportlink-serveur\\backup\\SV.GBK",
+    "tempFdbPath": "C:\\sportlink-serveur\\backup\\temp_sync.fdb",
     "gbakPath": "C:\\Program Files\\Firebird\\Firebird_3_0\\gbak.exe",
     "user": "SYSDBA",
     "password": "ginkoia"
@@ -15,6 +16,7 @@
   },
   "sync": {
     "batchSize": 1000,
-    "logPath": "C:\\Ginkoyes\\logs\\sync.log"
+    "logPath": "C:\\sportlink-serveur\\logs\\sync.log",
+    "schedule": "0 2 * * *"
   }
 }
