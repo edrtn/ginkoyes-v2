@@ -36,6 +36,11 @@ export interface SyncConfig {
     user: string;
     password: string;
   };
+  network?: {
+    share: string;
+    user: string;
+    password: string;
+  };
   mariadb: {
     host: string;
     port: number;
@@ -162,6 +167,22 @@ function getGbkLocalPath(cfg: SyncConfig): string {
 // Copy GBK from network share to local
 // ============================================================
 
+function mountNetworkShare(cfg: SyncConfig, log: (msg: string) => void): void {
+  if (!cfg.network?.share) return;
+
+  const { share, user, password } = cfg.network;
+  try {
+    // Disconnect first to avoid "already connected" errors
+    try { execSync(`net use "${share}" /delete /y`, { stdio: "pipe" }); } catch {}
+    const cmd = `net use "${share}" /user:${user} "${password}"`;
+    execSync(cmd, { stdio: "pipe", timeout: 30_000 });
+    log(`Partage réseau connecté : ${share}`);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(`Impossible de monter le partage ${share} : ${msg}`);
+  }
+}
+
 function copyGbk(cfg: SyncConfig, log: (msg: string) => void): void {
   const { gbkSourcePath } = cfg.firebird;
   const gbkLocalPath = getGbkLocalPath(cfg);
@@ -170,6 +191,9 @@ function copyGbk(cfg: SyncConfig, log: (msg: string) => void): void {
     log("Pas de gbkSourcePath configuré, utilisation directe du fichier local");
     return;
   }
+
+  // Mount network share if credentials are configured
+  mountNetworkShare(cfg, log);
 
   if (!fs.existsSync(gbkSourcePath)) {
     throw new Error(`Fichier source introuvable : ${gbkSourcePath}`);

@@ -14,6 +14,11 @@
     "password": "ginkoyes",
     "database": "ginkoyes"
   },
+  "network": {
+    "share": "\\\\SERVEUR\\Backup",
+    "user": "sportlink",
+    "password": "SportLink2026!"
+  },
   "sync": {
     "batchSize": 1000,
     "logPath": "C:\\sportlink-serveur\\logs\\sync.log",
