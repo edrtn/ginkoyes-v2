@@ -19,6 +19,11 @@ jobs:
         with:
           node-version: 20
 
+      - name: Compile sync service
+        run: |
+          npm ci
+          npx tsc -p sync/tsconfig.service.json
+
       - name: Build SportLink Server GUI
         working-directory: server-app
         run: |
