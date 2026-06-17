@@ -32,6 +32,8 @@ export default function ConnectionSetup({
   const [scanError, setScanError] = useState("");
   const [subnet, setSubnet] = useState("");
 
+  const [hostsFound, setHostsFound] = useState(0);
+
   const [manualIp, setManualIp] = useState("");
   const [selectedIp, setSelectedIp] = useState("");
 
@@ -54,6 +56,7 @@ export default function ConnectionSetup({
     setScanDone(false);
     setScanError("");
     setServers([]);
+    setHostsFound(0);
     setTestResult(null);
 
     try {
@@ -61,6 +64,7 @@ export default function ConnectionSetup({
       if (result.success) {
         setServers(result.servers);
         setSubnet(result.subnet);
+        setHostsFound(result.hostsFound ?? 0);
         if (result.servers.length === 1) {
           setSelectedIp(result.servers[0].ip);
           setTestResult({ success: true, articleCount: result.servers[0].articleCount });
@@ -216,6 +220,15 @@ export default function ConnectionSetup({
                     <p className="text-sm text-amber-800">
                       Aucun serveur MariaDB trouve sur le reseau.
                       {scanError ? ` (${scanError})` : ""}
+                    </p>
+                    {hostsFound > 0 && (
+                      <p className="mt-1 text-xs text-amber-600">
+                        {hostsFound} port(s) 3306 detecte(s) mais connexion MariaDB echouee.
+                        Verifiez les identifiants (user/password).
+                      </p>
+                    )}
+                    <p className="mt-1 text-xs text-amber-600">
+                      Utilisez l&apos;adresse IP manuelle ci-dessous si le scan ne fonctionne pas.
                     </p>
                   </div>
                 )}

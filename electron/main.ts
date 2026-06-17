@@ -2,6 +2,11 @@ import { app, BrowserWindow, ipcMain, Menu } from "electron";
 import path from "path";
 import net from "net";
 import os from "os";
+import { exec as execCb, execFile as execFileCb } from "child_process";
+import { promisify } from "util";
+
+const execAsync = promisify(execCb);
+const execFileAsync = promisify(execFileCb);
 import mysql from "mysql2/promise";
 import store, { DbConfig, VpnConfig } from "./store";
 import { startNextServer, stopNextServer } from "./server";
@@ -124,21 +129,7 @@ function setupIpcHandlers() {
 
   ipcMain.handle("test-db-connection", async (_event, config) => {
     try {
-      const conn = await mysql.createConnection({
-        host: config.host,
-        port: config.port,
-        user: config.user,
-        password: config.password,
-        database: config.database,
-        connectTimeout: 5000,
-      });
-
-      const [rows] = await conn.execute(
-        "SELECT COUNT(*) AS count FROM ARTARTICLE"
-      );
-      await conn.end();
-
-      const count = (rows as Array<{ count: number }>)[0]?.count ?? 0;
+      const count = await testMariaDbViaChild(config.host, config);
       return { success: true, articleCount: count };
     } catch (err) {
       return {
@@ -230,39 +221,41 @@ function setupIpcHandlers() {
 
   ipcMain.handle("scan-network", async () => {
     try {
-      const subnet = getLocalSubnet();
-      if (!subnet) {
+      const subnets = getLocalSubnets();
+      console.log("[scan] Subnets detected:", subnets);
+      if (subnets.length === 0) {
         return { success: false, error: "Impossible de determiner le sous-reseau local", servers: [] };
       }
 
-      // Scan all IPs on port 3306
-      const hostsWithPort = await scanSubnetForPort(subnet, 3306, 300);
+      // Scan each subnet for port 3306
+      let hostsWithPort: string[] = [];
+      for (const subnet of subnets) {
+        console.log(`[scan] Scanning ${subnet}.1-254 on port 3306...`);
+        const hosts = await scanSubnetForPort(subnet, 3306, 2000);
+        console.log(`[scan] ${subnet}: ${hosts.length} host(s) with port 3306:`, hosts);
+        hostsWithPort = hostsWithPort.concat(hosts);
+      }
 
-      // Test MariaDB connection on each host
+      // Test MariaDB connection on each host via child node process
+      // (macOS firewall blocks direct connections from unsigned Electron binary)
       const db = store.get("db");
       const servers: Array<{ ip: string; articleCount: number }> = [];
 
       for (const ip of hostsWithPort) {
         try {
-          const conn = await mysql.createConnection({
-            host: ip,
-            port: db.port || 3306,
-            user: db.user || "ginkoyes",
-            password: db.password || "ginkoyes",
-            database: db.database || "ginkoyes",
-            connectTimeout: 3000,
-          });
-          const [rows] = await conn.execute("SELECT COUNT(*) AS count FROM ARTARTICLE");
-          const count = (rows as Array<{ count: number }>)[0]?.count ?? 0;
-          await conn.end();
+          console.log(`[scan] Testing MariaDB on ${ip}...`);
+          const count = await testMariaDbViaChild(ip, db);
           servers.push({ ip, articleCount: count });
-        } catch {
-          // Port open but not a valid ginkoyes MariaDB — skip
+          console.log(`[scan] MariaDB OK on ${ip}: ${count} articles`);
+        } catch (err) {
+          console.log(`[scan] MariaDB failed on ${ip}:`, err instanceof Error ? err.message : String(err));
         }
       }
 
-      return { success: true, subnet, servers };
+      console.log(`[scan] Result: ${hostsWithPort.length} port(s) open, ${servers.length} serveur(s) valide(s)`);
+      return { success: true, subnet: subnets[0], hostsFound: hostsWithPort.length, servers };
     } catch (err) {
+      console.error("[scan] Error:", err);
       return {
         success: false,
         error: err instanceof Error ? err.message : String(err),
@@ -295,45 +288,98 @@ function setupIpcHandlers() {
 // Network scanning utilities
 // ============================================================
 
-function getLocalSubnet(): string | null {
+/**
+ * Test MariaDB connection via a child node process.
+ * Required because macOS firewall blocks Electron's direct TCP connections.
+ */
+async function testMariaDbViaChild(
+  host: string,
+  db: { port?: number; user?: string; password?: string; database?: string }
+): Promise<number> {
+  const script = [
+    "const mysql = require('mysql2/promise');",
+    "(async () => {",
+    `  const conn = await mysql.createConnection({`,
+    `    host: ${JSON.stringify(host)},`,
+    `    port: ${db.port || 3306},`,
+    `    user: ${JSON.stringify(db.user || "ginkoyes")},`,
+    `    password: ${JSON.stringify(db.password || "ginkoyes")},`,
+    `    database: ${JSON.stringify(db.database || "ginkoyes")},`,
+    `    connectTimeout: 5000,`,
+    `  });`,
+    "  const [rows] = await conn.execute('SELECT COUNT(*) AS count FROM ARTARTICLE');",
+    "  console.log(rows[0].count);",
+    "  await conn.end();",
+    "})().catch(e => { console.error(e.message); process.exit(1); });",
+  ].join("\n");
+
+  // Use system node, not Electron binary (which is blocked by macOS firewall)
+  const nodePath = process.env.PATH?.split(":").reduce<string | null>((found, dir) => {
+    if (found) return found;
+    try {
+      const p = path.join(dir, "node");
+      require("fs").accessSync(p, require("fs").constants.X_OK);
+      return p;
+    } catch { return null; }
+  }, null) || "/opt/homebrew/bin/node";
+
+  const { stdout, stderr } = await execFileAsync(
+    nodePath,
+    ["--input-type=commonjs", "-e", script],
+    { timeout: 10000, cwd: path.join(__dirname, "..") }
+  );
+  if (stderr?.trim()) throw new Error(stderr.trim());
+  const count = parseInt(stdout.trim(), 10);
+  return isNaN(count) ? 0 : count;
+}
+
+function getLocalSubnets(): string[] {
+  const subnets: string[] = [];
   const interfaces = os.networkInterfaces();
   for (const name of Object.keys(interfaces)) {
     const addrs = interfaces[name];
     if (!addrs) continue;
     for (const addr of addrs) {
       if (addr.family === "IPv4" && !addr.internal) {
-        // Extract subnet base (e.g., 192.168.68)
         const parts = addr.address.split(".");
-        return `${parts[0]}.${parts[1]}.${parts[2]}`;
+        const subnet = `${parts[0]}.${parts[1]}.${parts[2]}`;
+        if (!subnets.includes(subnet)) {
+          subnets.push(subnet);
+        }
       }
     }
   }
-  return null;
+  return subnets;
 }
 
-function checkPort(host: string, port: number, timeout: number): Promise<boolean> {
+/**
+ * Check if a port is open using nc (netcat) on macOS.
+ * We use nc as a child process because macOS firewall blocks
+ * direct net.Socket connections from unsigned Electron binaries.
+ */
+function checkPort(host: string, port: number, timeoutSec: number): Promise<boolean> {
+  if (process.platform === "darwin") {
+    return execAsync(`/usr/bin/nc -z -G ${timeoutSec} ${host} ${port}`, {
+      timeout: (timeoutSec + 1) * 1000,
+    }).then(() => true, () => false);
+  }
+  // Fallback to net.Socket on non-macOS
   return new Promise((resolve) => {
     const socket = new net.Socket();
-    socket.setTimeout(timeout);
-    socket.on("connect", () => {
-      socket.destroy();
-      resolve(true);
-    });
-    socket.on("timeout", () => {
-      socket.destroy();
-      resolve(false);
-    });
-    socket.on("error", () => {
-      socket.destroy();
-      resolve(false);
-    });
+    socket.setTimeout(timeoutSec * 1000);
+    socket.on("connect", () => { socket.destroy(); resolve(true); });
+    socket.on("timeout", () => { socket.destroy(); resolve(false); });
+    socket.on("error", () => { socket.destroy(); resolve(false); });
     socket.connect(port, host);
   });
 }
 
-async function scanSubnetForPort(subnet: string, port: number, timeout: number): Promise<string[]> {
+/** Scan subnet for open port using nc child processes */
+async function scanSubnetForPort(subnet: string, port: number, _timeout: number): Promise<string[]> {
   const results: string[] = [];
-  // Scan in batches of 50 to avoid too many concurrent sockets
+  // nc -G uses seconds for connect timeout
+  const timeoutSec = 2;
+  // Run 50 concurrent nc processes — each is a lightweight child process
   const batchSize = 50;
   for (let start = 1; start <= 254; start += batchSize) {
     const end = Math.min(start + batchSize - 1, 254);
@@ -341,12 +387,16 @@ async function scanSubnetForPort(subnet: string, port: number, timeout: number):
     for (let i = start; i <= end; i++) {
       const ip = `${subnet}.${i}`;
       batch.push(
-        checkPort(ip, port, timeout).then((open) => {
-          if (open) results.push(ip);
+        checkPort(ip, port, timeoutSec).then((open) => {
+          if (open) {
+            console.log(`[scan] Port ${port} OPEN on ${ip}`);
+            results.push(ip);
+          }
         })
       );
     }
     await Promise.all(batch);
+    console.log(`[scan] Scanned ${subnet}.${start}-${end}`);
   }
   return results;
 }
