@@ -3,7 +3,7 @@ name: Build Server Installer
 on:
   push:
     tags:
-      - 'v*'
+      - 'server-v*'
   workflow_dispatch:
 
 jobs:
