@@ -31,8 +31,8 @@ function getDbEnvVars(): Record<string, string> {
     DB_USER: db.user || "ginkoyes",
     DB_PASSWORD: db.password || "ginkoyes",
     DB_NAME: db.database || "ginkoyes",
-    // When VPN is enabled, tell Next.js to use the local tunnel for Tailscale fallback
-    DB_TUNNEL_PORT: vpn.enabled ? String(TUNNEL_PORT) : "",
+    // macOS: use SOCKS tunnel for Tailscale. Windows: direct connection (system service handles routing)
+    DB_TUNNEL_PORT: vpn.enabled && process.platform !== "win32" ? String(TUNNEL_PORT) : "",
   };
 }
 
@@ -196,15 +196,18 @@ function setupIpcHandlers() {
       return { success: false, error: "Aucun hote Tailscale configure" };
     }
 
-    try {
-      console.log("[VPN] Starting tunnel...");
-      await startTunnel(db.tailscaleHost, db.port || 3306, getVpnStatus().socksPort);
-      console.log("[VPN] Tunnel started on port", TUNNEL_PORT);
-    } catch (err) {
-      console.log("[VPN] Tunnel error (may already be running):", err instanceof Error ? err.message : String(err));
+    // macOS: start SOCKS tunnel before VPN. Windows: skip (direct routing via system service)
+    if (process.platform !== "win32") {
+      try {
+        console.log("[VPN] Starting tunnel...");
+        await startTunnel(db.tailscaleHost, db.port || 3306, getVpnStatus().socksPort);
+        console.log("[VPN] Tunnel started on port", TUNNEL_PORT);
+      } catch (err) {
+        console.log("[VPN] Tunnel error (may already be running):", err instanceof Error ? err.message : String(err));
+      }
     }
 
-    console.log("[VPN] Starting VPN daemon...");
+    console.log("[VPN] Starting VPN...");
     const status = await startVpn(vpn.authKey);
     console.log("[VPN] Start result:", status);
     return { success: status.state === "connected", status };
@@ -525,10 +528,13 @@ app.whenReady().then(async () => {
   const dbCfg = store.get("db");
 
   if (vpnCfg.enabled && vpnCfg.authKey && dbCfg.tailscaleHost) {
-    try {
-      await startTunnel(dbCfg.tailscaleHost, dbCfg.port || 3306, getVpnStatus().socksPort);
-    } catch {
-      // Port may be in use — non-fatal
+    // macOS: start SOCKS tunnel. Windows: skip (direct routing)
+    if (process.platform !== "win32") {
+      try {
+        await startTunnel(dbCfg.tailscaleHost, dbCfg.port || 3306, getVpnStatus().socksPort);
+      } catch {
+        // Port may be in use — non-fatal
+      }
     }
     // Start VPN in background (don't block app startup)
     startVpn(vpnCfg.authKey).catch(() => {
