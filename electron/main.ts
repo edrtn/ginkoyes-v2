@@ -7,7 +7,6 @@ import { promisify } from "util";
 
 const execAsync = promisify(execCb);
 const execFileAsync = promisify(execFileCb);
-import mysql from "mysql2/promise";
 import store, { DbConfig, VpnConfig } from "./store";
 import { startNextServer, stopNextServer } from "./server";
 import { setupAutoUpdater } from "./updater";
@@ -289,13 +288,29 @@ function setupIpcHandlers() {
 // ============================================================
 
 /**
- * Test MariaDB connection via a child node process.
+ * Find system node binary (not Electron binary, which is blocked by macOS firewall).
+ */
+function findSystemNode(): string {
+  const dirs = process.env.PATH?.split(":") ?? [];
+  for (const dir of dirs) {
+    try {
+      const p = path.join(dir, "node");
+      require("fs").accessSync(p, require("fs").constants.X_OK);
+      return p;
+    } catch { /* skip */ }
+  }
+  return "/opt/homebrew/bin/node";
+}
+
+/**
+ * Execute a SQL query via a child node process and return JSON rows.
  * Required because macOS firewall blocks Electron's direct TCP connections.
  */
-async function testMariaDbViaChild(
+async function queryViaChild(
   host: string,
-  db: { port?: number; user?: string; password?: string; database?: string }
-): Promise<number> {
+  db: { port?: number; user?: string; password?: string; database?: string },
+  sql: string
+): Promise<Record<string, unknown>[]> {
   const script = [
     "const mysql = require('mysql2/promise');",
     "(async () => {",
@@ -307,30 +322,30 @@ async function testMariaDbViaChild(
     `    database: ${JSON.stringify(db.database || "ginkoyes")},`,
     `    connectTimeout: 5000,`,
     `  });`,
-    "  const [rows] = await conn.execute('SELECT COUNT(*) AS count FROM ARTARTICLE');",
-    "  console.log(rows[0].count);",
+    `  const [rows] = await conn.execute(${JSON.stringify(sql)});`,
+    "  console.log(JSON.stringify(rows));",
     "  await conn.end();",
     "})().catch(e => { console.error(e.message); process.exit(1); });",
   ].join("\n");
 
-  // Use system node, not Electron binary (which is blocked by macOS firewall)
-  const nodePath = process.env.PATH?.split(":").reduce<string | null>((found, dir) => {
-    if (found) return found;
-    try {
-      const p = path.join(dir, "node");
-      require("fs").accessSync(p, require("fs").constants.X_OK);
-      return p;
-    } catch { return null; }
-  }, null) || "/opt/homebrew/bin/node";
-
   const { stdout, stderr } = await execFileAsync(
-    nodePath,
+    findSystemNode(),
     ["--input-type=commonjs", "-e", script],
     { timeout: 10000, cwd: path.join(__dirname, "..") }
   );
   if (stderr?.trim()) throw new Error(stderr.trim());
-  const count = parseInt(stdout.trim(), 10);
-  return isNaN(count) ? 0 : count;
+  return JSON.parse(stdout.trim());
+}
+
+/**
+ * Test MariaDB connection via child node process. Returns article count.
+ */
+async function testMariaDbViaChild(
+  host: string,
+  db: { port?: number; user?: string; password?: string; database?: string }
+): Promise<number> {
+  const rows = await queryViaChild(host, db, "SELECT COUNT(*) AS count FROM ARTARTICLE");
+  return (rows[0]?.count as number) ?? 0;
 }
 
 function getLocalSubnets(): string[] {
@@ -411,38 +426,23 @@ async function autoConfigureVpnFromDb(): Promise<void> {
   const db = store.get("db");
   if (!db.lanHost) return;
 
-  let conn;
   try {
-    conn = await mysql.createConnection({
-      host: db.lanHost,
-      port: db.port || 3306,
-      user: db.user,
-      password: db.password,
-      database: db.database,
-      connectTimeout: 3000,
-    });
-
-    const [rows] = await conn.execute(
+    const rows = await queryViaChild(
+      db.lanHost,
+      db,
       "SELECT tailscale_ip, auth_key, tailnet_name FROM _vpn_config WHERE id = 1"
     );
-    const vpnRow = (rows as Array<{ tailscale_ip: string; auth_key: string; tailnet_name: string }>)[0];
+    const vpnRow = rows[0] as { tailscale_ip?: string; auth_key?: string } | undefined;
 
-    if (vpnRow && vpnRow.tailscale_ip && vpnRow.auth_key) {
-      // Update db.tailscaleHost from the server's Tailscale IP
+    if (vpnRow?.tailscale_ip && vpnRow?.auth_key) {
       store.set("db", { ...db, tailscaleHost: vpnRow.tailscale_ip });
-
-      // Update VPN config
-      store.set("vpn", {
-        authKey: vpnRow.auth_key,
-        enabled: true,
-      });
-
+      store.set("vpn", { authKey: vpnRow.auth_key, enabled: true });
       console.log(`[VPN] Auto-configured from DB: ${vpnRow.tailscale_ip}`);
+    } else {
+      console.log("[VPN] _vpn_config table empty or missing data");
     }
-  } catch {
-    // LAN not available or table doesn't exist — skip silently
-  } finally {
-    if (conn) await conn.end().catch(() => {});
+  } catch (err) {
+    console.log("[VPN] Auto-configure failed:", err instanceof Error ? err.message : String(err));
   }
 }
 
