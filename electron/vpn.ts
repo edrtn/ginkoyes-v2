@@ -129,6 +129,12 @@ export async function startVpn(authKey: string): Promise<VpnStatus> {
     const stateDir = getStateDir();
     const sock = getSocketPath();
 
+    // Clean up stale socket from previous run (Unix only)
+    if (process.platform !== "win32" && fs.existsSync(sock)) {
+      console.log("[VPN] Removing stale socket:", sock);
+      fs.unlinkSync(sock);
+    }
+
     const args = [
       "--tun=userspace-networking",
       `--statedir=${stateDir}`,
