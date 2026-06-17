@@ -93,7 +93,16 @@ function runCli(args: string[], timeoutMs: number = 30_000): string {
   const sock = getSocketPath();
   // --socket is a global flag and must come BEFORE the subcommand
   const fullArgs = [`--socket=${sock}`, ...args];
-  return execFileSync(cliBin(), fullArgs, { timeout: timeoutMs }).toString().trim();
+  console.log("[VPN] runCli:", cliBin(), fullArgs.join(" "));
+  try {
+    const result = execFileSync(cliBin(), fullArgs, { timeout: timeoutMs }).toString().trim();
+    console.log("[VPN] runCli result:", result);
+    return result;
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("[VPN] runCli error:", msg);
+    throw err;
+  }
 }
 
 // ============================================================
@@ -129,9 +138,37 @@ export async function startVpn(authKey: string): Promise<VpnStatus> {
       "--port=0",
     ];
 
-    daemon = spawn(daemonBin(), args, { stdio: "pipe" });
+    console.log("[VPN] Spawning daemon:", daemonBin(), args);
+    daemon = spawn(daemonBin(), args, {
+      stdio: ["ignore", "pipe", "pipe"],
+      windowsHide: true,
+      detached: false,
+    });
+
+    // Capture stderr for debugging
+    let stderrData = "";
+    daemon.stderr?.on("data", (chunk: Buffer) => {
+      const line = chunk.toString();
+      stderrData += line;
+      console.log("[VPN][daemon-stderr]", line.trim());
+    });
+
+    daemon.stdout?.on("data", (chunk: Buffer) => {
+      console.log("[VPN][daemon-stdout]", chunk.toString().trim());
+    });
+
+    daemon.on("error", (err) => {
+      console.error("[VPN] Daemon spawn error:", err.message);
+      currentStatus = {
+        state: "error",
+        error: `Erreur lancement daemon: ${err.message}`,
+        socksPort: SOCKS_PORT,
+      };
+      daemon = null;
+    });
 
     daemon.on("exit", (code) => {
+      console.log("[VPN] Daemon exited with code:", code, "stderr:", stderrData.slice(0, 500));
       if (currentStatus.state === "connected" || currentStatus.state === "connecting") {
         currentStatus = {
           state: "error",
@@ -144,6 +181,7 @@ export async function startVpn(authKey: string): Promise<VpnStatus> {
 
     // Wait for daemon to start up
     await new Promise((r) => setTimeout(r, 3000));
+    console.log("[VPN] After wait — daemon alive:", !!daemon && !daemon.killed, "pid:", daemon?.pid);
 
     if (!daemon || daemon.killed) {
       throw new Error("tailscaled n'a pas demarre");
