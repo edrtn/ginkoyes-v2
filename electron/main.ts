@@ -128,7 +128,7 @@ function setupIpcHandlers() {
 
   ipcMain.handle("test-db-connection", async (_event, config) => {
     try {
-      const count = await testMariaDbViaChild(config.host, config);
+      const count = await testMariaDb(config.host, config);
       return { success: true, articleCount: count };
     } catch (err) {
       return {
@@ -149,7 +149,7 @@ function setupIpcHandlers() {
     }
     try {
       const db = store.get("db");
-      const count = await testMariaDbViaChild("127.0.0.1", {
+      const count = await testMariaDb("127.0.0.1", {
         port: TUNNEL_PORT,
         user: db.user,
         password: db.password,
@@ -274,7 +274,7 @@ function setupIpcHandlers() {
       for (const ip of hostsWithPort) {
         try {
           console.log(`[scan] Testing MariaDB on ${ip}...`);
-          const count = await testMariaDbViaChild(ip, db);
+          const count = await testMariaDb(ip, db);
           servers.push({ ip, articleCount: count });
           console.log(`[scan] MariaDB OK on ${ip}: ${count} articles`);
         } catch (err) {
@@ -320,24 +320,56 @@ function setupIpcHandlers() {
 
 /**
  * Find system node binary (not Electron binary, which is blocked by macOS firewall).
+ * Only used on macOS — Windows/Linux use direct connections.
  */
 function findSystemNode(): string {
-  const dirs = process.env.PATH?.split(":") ?? [];
+  const sep = process.platform === "win32" ? ";" : ":";
+  const exe = process.platform === "win32" ? "node.exe" : "node";
+  const dirs = process.env.PATH?.split(sep) ?? [];
   for (const dir of dirs) {
     try {
-      const p = path.join(dir, "node");
+      const p = path.join(dir, exe);
       require("fs").accessSync(p, require("fs").constants.X_OK);
       return p;
     } catch { /* skip */ }
   }
-  return "/opt/homebrew/bin/node";
+  if (process.platform === "darwin") return "/opt/homebrew/bin/node";
+  return "node"; // fallback to PATH lookup
 }
 
 /**
- * Execute a SQL query via a child node process and return JSON rows.
- * Required because macOS firewall blocks Electron's direct TCP connections.
+ * Execute a SQL query and return JSON rows.
+ * On macOS: uses a child node process (macOS firewall blocks Electron's TCP).
+ * On Windows/Linux: uses direct mysql2 connection (no firewall issue).
  */
-async function queryViaChild(
+async function queryDb(
+  host: string,
+  db: { port?: number; user?: string; password?: string; database?: string },
+  sql: string
+): Promise<Record<string, unknown>[]> {
+  if (process.platform === "darwin") {
+    return queryViaChildNode(host, db, sql);
+  }
+
+  // Direct connection on Windows/Linux
+  const mysql2 = require("mysql2/promise");
+  const conn = await mysql2.createConnection({
+    host,
+    port: db.port || 3306,
+    user: db.user || "ginkoyes",
+    password: db.password || "ginkoyes",
+    database: db.database || "ginkoyes",
+    connectTimeout: 5000,
+  });
+  const [rows] = await conn.execute(sql);
+  await conn.end();
+  return rows as Record<string, unknown>[];
+}
+
+/**
+ * Execute a SQL query via a child node process (macOS only).
+ */
+async function queryViaChildNode(
   host: string,
   db: { port?: number; user?: string; password?: string; database?: string },
   sql: string
@@ -369,13 +401,13 @@ async function queryViaChild(
 }
 
 /**
- * Test MariaDB connection via child node process. Returns article count.
+ * Test MariaDB connection. Returns article count.
  */
-async function testMariaDbViaChild(
+async function testMariaDb(
   host: string,
   db: { port?: number; user?: string; password?: string; database?: string }
 ): Promise<number> {
-  const rows = await queryViaChild(host, db, "SELECT COUNT(*) AS count FROM ARTARTICLE");
+  const rows = await queryDb(host, db, "SELECT COUNT(*) AS count FROM ARTARTICLE");
   return (rows[0]?.count as number) ?? 0;
 }
 
@@ -458,7 +490,7 @@ async function autoConfigureVpnFromDb(): Promise<void> {
   if (!db.lanHost) return;
 
   try {
-    const rows = await queryViaChild(
+    const rows = await queryDb(
       db.lanHost,
       db,
       "SELECT tailscale_ip, auth_key, tailnet_name FROM _vpn_config WHERE id = 1"
