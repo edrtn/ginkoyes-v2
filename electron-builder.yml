@@ -51,7 +51,7 @@ mac:
         - arm64
   icon: build/icon.icns
   category: public.app-category.business
-  identity: "Developer ID Application: Edward Renton (48W4C7B48Z)"
+  identity: "Edward Renton (48W4C7B48Z)"
   hardenedRuntime: true
   gatekeeperAssess: false
   entitlements: build/entitlements.mac.plist
