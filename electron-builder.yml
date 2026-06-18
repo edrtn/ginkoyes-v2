@@ -28,11 +28,6 @@ extraResources:
     to: standalone/public
     filter:
       - "**/*"
-  - from: tailscale-bin/${os}
-    to: tailscale
-    filter:
-      - "**/*"
-
 asar: true
 
 win:
