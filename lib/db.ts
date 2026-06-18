@@ -6,9 +6,10 @@ let tunnelPool: Pool | null = null;
 let poolType: "lan" | "tunnel" | null = null;
 let connectionMode: "local" | "vpn" | "error" | "unknown" = "unknown";
 
-/** Track LAN failures to skip slow LAN probe when we know it's down */
+/** Background LAN probe timer */
+let lanProbeTimer: ReturnType<typeof setInterval> | null = null;
+/** When LAN last failed — used to skip inline probe */
 let lanFailedAt = 0;
-const LAN_RETRY_COOLDOWN = 30000; // 30s before retrying LAN after failure
 
 export function getConnectionMode() {
   return connectionMode;
@@ -36,27 +37,68 @@ export async function resetPool(): Promise<void> {
   poolType = null;
 }
 
+// ============================================================
+// Background LAN probe — runs every 15s when on tunnel
+// Silently tests if LAN became available and switches back
+// ============================================================
+
+function startLanProbe() {
+  if (lanProbeTimer) return;
+  lanProbeTimer = setInterval(async () => {
+    // Only probe if we're currently on tunnel
+    if (poolType !== "tunnel") return;
+
+    const config = getConfig();
+    if (!config.lanHost) return;
+
+    let probePool: Pool | null = null;
+    try {
+      probePool = mysql.createPool({
+        host: config.lanHost,
+        port: config.port,
+        user: config.user,
+        password: config.password,
+        database: config.database,
+        connectTimeout: 1500,
+        connectionLimit: 1,
+        ...POOL_COMMON,
+      });
+      const conn = await probePool.getConnection();
+      // LAN is back! Switch over
+      await conn.execute("SELECT 1");
+      conn.release();
+      console.log("[db] LAN probe: reachable — switching back to LAN");
+
+      // Close old tunnel pool and switch
+      if (tunnelPool) {
+        try { await tunnelPool.end(); } catch { /* ignore */ }
+        tunnelPool = null;
+      }
+      // Reuse probe pool as the new LAN pool
+      lanPool = probePool;
+      probePool = null; // don't close it below
+      poolType = "lan";
+      connectionMode = "local";
+      lanFailedAt = 0;
+    } catch {
+      // LAN still unreachable — stay on tunnel
+    } finally {
+      if (probePool) {
+        try { await probePool.end(); } catch { /* ignore */ }
+      }
+    }
+  }, 15000);
+}
+
 /**
- * Try to reuse existing pool, or discover which pool works.
- * When tunnel is available, LAN probe uses a short timeout (1.5s)
- * so we don't block every request for 5s when off-site.
+ * Get a connection. Priority: LAN > tunnel.
+ * When on tunnel, a background probe checks LAN every 15s.
  */
 async function getConnection(): Promise<PoolConnection> {
   const config = getConfig();
   const hasTunnel = !!(config.tunnelHost && config.tunnelPort);
 
-  // 1. Reuse existing working pool
-  if (poolType === "tunnel" && tunnelPool) {
-    try {
-      const conn = await tunnelPool.getConnection();
-      connectionMode = "vpn";
-      return conn;
-    } catch {
-      tunnelPool = null;
-      poolType = null;
-    }
-  }
-
+  // 1. Reuse LAN pool (preferred)
   if (poolType === "lan" && lanPool) {
     try {
       const conn = await lanPool.getConnection();
@@ -69,10 +111,22 @@ async function getConnection(): Promise<PoolConnection> {
     }
   }
 
-  // 2. Probe LAN — but skip if it failed recently and we have a tunnel
-  const lanCooldownActive = hasTunnel && lanFailedAt && (Date.now() - lanFailedAt < LAN_RETRY_COOLDOWN);
+  // 2. Reuse tunnel pool
+  if (poolType === "tunnel" && tunnelPool) {
+    try {
+      const conn = await tunnelPool.getConnection();
+      connectionMode = "vpn";
+      return conn;
+    } catch {
+      tunnelPool = null;
+      poolType = null;
+    }
+  }
 
-  if (config.lanHost && !lanCooldownActive) {
+  // 3. Try LAN first — skip if it failed in the last 15s and tunnel exists
+  const skipLan = hasTunnel && lanFailedAt && (Date.now() - lanFailedAt < 15000);
+
+  if (config.lanHost && !skipLan) {
     try {
       lanPool = mysql.createPool({
         host: config.lanHost,
@@ -80,7 +134,7 @@ async function getConnection(): Promise<PoolConnection> {
         user: config.user,
         password: config.password,
         database: config.database,
-        connectTimeout: hasTunnel ? 1500 : 5000, // fast probe when tunnel available
+        connectTimeout: hasTunnel ? 1500 : 5000,
         ...POOL_COMMON,
       });
       const conn = await lanPool.getConnection();
@@ -97,7 +151,7 @@ async function getConnection(): Promise<PoolConnection> {
     }
   }
 
-  // 3. Fallback to SSH tunnel
+  // 4. Fallback to SSH tunnel
   if (hasTunnel) {
     tunnelPool = mysql.createPool({
       host: config.tunnelHost,
@@ -111,10 +165,12 @@ async function getConnection(): Promise<PoolConnection> {
     const conn = await tunnelPool.getConnection();
     poolType = "tunnel";
     connectionMode = "vpn";
+    // Start background LAN probe to switch back when LAN returns
+    startLanProbe();
     return conn;
   }
 
-  // 4. No tunnel — last resort LAN attempt
+  // 5. No tunnel — last resort LAN attempt
   lanPool = mysql.createPool({
     host: config.lanHost,
     port: config.port,
