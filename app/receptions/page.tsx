@@ -40,7 +40,7 @@ export default function ReceptionsPage() {
   useEffect(() => {
     fetch("/api/receptions")
       .then((r) => r.json())
-      .then((data) => setReceptions(data))
+      .then((data) => setReceptions(Array.isArray(data) ? data : []))
       .catch(console.error)
       .finally(() => setLoading(false));
   }, []);

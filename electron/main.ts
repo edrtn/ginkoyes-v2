@@ -7,11 +7,10 @@ import { promisify } from "util";
 
 const execAsync = promisify(execCb);
 const execFileAsync = promisify(execFileCb);
-import store, { DbConfig, VpnConfig } from "./store";
+import store, { DbConfig, SshConfig } from "./store";
 import { startNextServer, stopNextServer } from "./server";
 import { setupAutoUpdater } from "./updater";
-import { startVpn, stopVpn, getVpnStatus } from "./vpn";
-import { startTunnel, stopTunnel, isTunnelRunning, TUNNEL_PORT } from "./tunnel";
+import { startTunnel, stopTunnel, getTunnelStatus, getTunnelPort } from "./ssh-tunnel";
 
 let mainWindow: BrowserWindow | null = null;
 let serverPort: number | null = null;
@@ -23,15 +22,16 @@ let serverPort: number | null = null;
 
 function getDbEnvVars(): Record<string, string> {
   const db = store.get("db");
-  const vpn = store.get("vpn");
+  const tunnelPort = getTunnelPort();
   return {
     DB_LAN_HOST: db.lanHost || "127.0.0.1",
-    DB_TAILSCALE_HOST: db.tailscaleHost || "",
     DB_PORT: String(db.port || 3306),
     DB_USER: db.user || "ginkoyes",
     DB_PASSWORD: db.password || "ginkoyes",
     DB_NAME: db.database || "ginkoyes",
-    DB_TUNNEL_PORT: vpn.enabled ? String(TUNNEL_PORT) : "",
+    // SSH tunnel info for failover
+    DB_TUNNEL_HOST: tunnelPort ? "127.0.0.1" : "",
+    DB_TUNNEL_PORT: tunnelPort ? String(tunnelPort) : "",
   };
 }
 
@@ -118,7 +118,6 @@ function setupIpcHandlers() {
 
   ipcMain.handle("set-db-config", async (_event, config: DbConfig) => {
     store.set("db", config);
-    // Restart the Next.js server with new env vars so lib/config picks up changes
     if (mainWindow) {
       mainWindow.webContents.send("config-changed");
     }
@@ -137,22 +136,17 @@ function setupIpcHandlers() {
     }
   });
 
-  // Test DB via Tailscale tunnel (localhost:13306 → SOCKS5 → remote)
+  // Test DB via SSH tunnel
   ipcMain.handle("test-db-via-tunnel", async () => {
-    const vpnStatus = getVpnStatus();
-    if (vpnStatus.state !== "connected") {
-      return { success: false, error: "VPN non connecte. Demarrez le VPN d'abord." };
-    }
-    if (!isTunnelRunning()) {
-      return { success: false, error: "Tunnel non actif." };
+    const tunnelStatus = getTunnelStatus();
+    if (tunnelStatus.state !== "connected" || !tunnelStatus.localPort) {
+      return { success: false, error: "Tunnel SSH non connecte." };
     }
     try {
       const db = store.get("db");
       const count = await testMariaDb("127.0.0.1", {
-        port: TUNNEL_PORT,
-        user: db.user,
-        password: db.password,
-        database: db.database,
+        ...db,
+        port: tunnelStatus.localPort,
       });
       return { success: true, articleCount: count };
     } catch (err) {
@@ -171,68 +165,52 @@ function setupIpcHandlers() {
     return app.isPackaged;
   });
 
-  // --- VPN handlers ---
+  // --- SSH Tunnel handlers ---
 
-  ipcMain.handle("get-vpn-config", () => {
-    return store.get("vpn");
+  ipcMain.handle("get-ssh-config", () => {
+    return store.get("ssh");
   });
 
-  ipcMain.handle("set-vpn-config", async (_event, config: VpnConfig) => {
-    store.set("vpn", config);
+  ipcMain.handle("set-ssh-config", async (_event, config: SshConfig) => {
+    store.set("ssh", config);
     return { success: true };
   });
 
-  ipcMain.handle("vpn-start", async () => {
-    const vpn = store.get("vpn");
-    console.log("[VPN] Start requested. authKey:", vpn.authKey ? "present" : "MISSING");
-    if (!vpn.authKey) {
-      return { success: false, error: "Aucune auth key configuree" };
+  ipcMain.handle("tunnel-start", async () => {
+    const ssh = store.get("ssh");
+    if (!ssh.vpsHost) {
+      return { success: false, error: "Aucun serveur VPS configure" };
+    }
+    if (!ssh.privateKey) {
+      return { success: false, error: "Cle SSH manquante" };
     }
 
-    const db = store.get("db");
-    console.log("[VPN] tailscaleHost:", db.tailscaleHost || "MISSING");
-    if (!db.tailscaleHost) {
-      return { success: false, error: "Aucun hote Tailscale configure" };
+    console.log("[SSH] Starting tunnel to", ssh.vpsHost);
+    const status = await startTunnel({
+      vpsHost: ssh.vpsHost,
+      vpsPort: ssh.vpsPort || 22,
+      sshUser: ssh.sshUser || "tunnel",
+      privateKey: ssh.privateKey,
+      remoteHost: "localhost",
+      remotePort: ssh.remotePort || 3307,
+    });
+
+    // If tunnel connected, restart Next.js server with updated env vars
+    if (status.state === "connected") {
+      await restartNextServer();
     }
 
-    try {
-      console.log("[VPN] Starting tunnel...");
-      await startTunnel(db.tailscaleHost, db.port || 3306, getVpnStatus().socksPort);
-      console.log("[VPN] Tunnel started on port", TUNNEL_PORT);
-    } catch (err) {
-      console.log("[VPN] Tunnel error (may already be running):", err instanceof Error ? err.message : String(err));
-    }
-
-    console.log("[VPN] Starting VPN...");
-    const status = await startVpn(vpn.authKey);
-    console.log("[VPN] Start result:", status);
-    return { success: status.state === "connected", status };
+    return { success: status.state !== "error", status };
   });
 
-  ipcMain.handle("vpn-stop", () => {
-    stopVpn();
+  ipcMain.handle("tunnel-stop", async () => {
     stopTunnel();
+    await restartNextServer();
     return { success: true };
   });
 
-  ipcMain.handle("vpn-status", () => {
-    return getVpnStatus();
-  });
-
-  ipcMain.handle("vpn-refresh-from-db", async () => {
-    try {
-      await autoConfigureVpnFromDb();
-      return {
-        success: true,
-        vpn: store.get("vpn"),
-        tailscaleHost: store.get("db").tailscaleHost,
-      };
-    } catch (err) {
-      return {
-        success: false,
-        error: err instanceof Error ? err.message : String(err),
-      };
-    }
+  ipcMain.handle("tunnel-status", () => {
+    return getTunnelStatus();
   });
 
   // --- Configured flag ---
@@ -256,7 +234,6 @@ function setupIpcHandlers() {
         return { success: false, error: "Impossible de determiner le sous-reseau local", servers: [] };
       }
 
-      // Scan each subnet for port 3306
       let hostsWithPort: string[] = [];
       for (const subnet of subnets) {
         console.log(`[scan] Scanning ${subnet}.1-254 on port 3306...`);
@@ -265,8 +242,6 @@ function setupIpcHandlers() {
         hostsWithPort = hostsWithPort.concat(hosts);
       }
 
-      // Test MariaDB connection on each host via child node process
-      // (macOS firewall blocks direct connections from unsigned Electron binary)
       const db = store.get("db");
       const servers: Array<{ ip: string; articleCount: number }> = [];
 
@@ -297,12 +272,7 @@ function setupIpcHandlers() {
 
   ipcMain.handle("restart-server", async () => {
     try {
-      stopNextServer();
-      const dbEnv = getDbEnvVars();
-      serverPort = await startNextServer(dbEnv);
-      if (mainWindow) {
-        mainWindow.loadURL(`http://127.0.0.1:${serverPort}`);
-      }
+      await restartNextServer();
       return { success: true };
     } catch (err) {
       return {
@@ -313,14 +283,19 @@ function setupIpcHandlers() {
   });
 }
 
+async function restartNextServer() {
+  stopNextServer();
+  const dbEnv = getDbEnvVars();
+  serverPort = await startNextServer(dbEnv);
+  if (mainWindow) {
+    mainWindow.loadURL(`http://127.0.0.1:${serverPort}`);
+  }
+}
+
 // ============================================================
 // Network scanning utilities
 // ============================================================
 
-/**
- * Find system node binary (not Electron binary, which is blocked by macOS firewall).
- * Only used on macOS — Windows/Linux use direct connections.
- */
 function findSystemNode(): string {
   const sep = process.platform === "win32" ? ";" : ":";
   const exe = process.platform === "win32" ? "node.exe" : "node";
@@ -333,14 +308,9 @@ function findSystemNode(): string {
     } catch { /* skip */ }
   }
   if (process.platform === "darwin") return "/opt/homebrew/bin/node";
-  return "node"; // fallback to PATH lookup
+  return "node";
 }
 
-/**
- * Execute a SQL query and return JSON rows.
- * On macOS: uses a child node process (macOS firewall blocks Electron's TCP).
- * On Windows/Linux: uses direct mysql2 connection (no firewall issue).
- */
 async function queryDb(
   host: string,
   db: { port?: number; user?: string; password?: string; database?: string },
@@ -350,7 +320,6 @@ async function queryDb(
     return queryViaChildNode(host, db, sql);
   }
 
-  // Direct connection on Windows/Linux
   const mysql2 = require("mysql2/promise");
   const conn = await mysql2.createConnection({
     host,
@@ -365,9 +334,6 @@ async function queryDb(
   return rows as Record<string, unknown>[];
 }
 
-/**
- * Execute a SQL query via a child node process (macOS only).
- */
 async function queryViaChildNode(
   host: string,
   db: { port?: number; user?: string; password?: string; database?: string },
@@ -399,9 +365,6 @@ async function queryViaChildNode(
   return JSON.parse(stdout.trim());
 }
 
-/**
- * Test MariaDB connection. Returns article count.
- */
 async function testMariaDb(
   host: string,
   db: { port?: number; user?: string; password?: string; database?: string }
@@ -429,18 +392,12 @@ function getLocalSubnets(): string[] {
   return subnets;
 }
 
-/**
- * Check if a port is open using nc (netcat) on macOS.
- * We use nc as a child process because macOS firewall blocks
- * direct net.Socket connections from unsigned Electron binaries.
- */
 function checkPort(host: string, port: number, timeoutSec: number): Promise<boolean> {
   if (process.platform === "darwin") {
     return execAsync(`/usr/bin/nc -z -G ${timeoutSec} ${host} ${port}`, {
       timeout: (timeoutSec + 1) * 1000,
     }).then(() => true, () => false);
   }
-  // Fallback to net.Socket on non-macOS
   return new Promise((resolve) => {
     const socket = new net.Socket();
     socket.setTimeout(timeoutSec * 1000);
@@ -451,12 +408,9 @@ function checkPort(host: string, port: number, timeoutSec: number): Promise<bool
   });
 }
 
-/** Scan subnet for open port using nc child processes */
 async function scanSubnetForPort(subnet: string, port: number, _timeout: number): Promise<string[]> {
   const results: string[] = [];
-  // nc -G uses seconds for connect timeout
   const timeoutSec = 2;
-  // Run 50 concurrent nc processes — each is a lightweight child process
   const batchSize = 50;
   for (let start = 1; start <= 254; start += batchSize) {
     const end = Math.min(start + batchSize - 1, 254);
@@ -479,36 +433,6 @@ async function scanSubnetForPort(subnet: string, port: number, _timeout: number)
 }
 
 // ============================================================
-// Auto-configure VPN from database
-// When on LAN, reads _vpn_config to get Tailscale credentials
-// so the client is zero-config for VPN.
-// ============================================================
-
-async function autoConfigureVpnFromDb(): Promise<void> {
-  const db = store.get("db");
-  if (!db.lanHost) return;
-
-  try {
-    const rows = await queryDb(
-      db.lanHost,
-      db,
-      "SELECT tailscale_ip, auth_key, tailnet_name FROM _vpn_config WHERE id = 1"
-    );
-    const vpnRow = rows[0] as { tailscale_ip?: string; auth_key?: string } | undefined;
-
-    if (vpnRow?.tailscale_ip && vpnRow?.auth_key) {
-      store.set("db", { ...db, tailscaleHost: vpnRow.tailscale_ip });
-      store.set("vpn", { authKey: vpnRow.auth_key, enabled: true });
-      console.log(`[VPN] Auto-configured from DB: ${vpnRow.tailscale_ip}`);
-    } else {
-      console.log("[VPN] _vpn_config table empty or missing data");
-    }
-  } catch (err) {
-    console.log("[VPN] Auto-configure failed:", err instanceof Error ? err.message : String(err));
-  }
-}
-
-// ============================================================
 // App lifecycle
 // ============================================================
 
@@ -516,26 +440,25 @@ app.whenReady().then(async () => {
   setupIpcHandlers();
   createMenu();
 
-  // Try to auto-configure VPN from the database (LAN)
-  await autoConfigureVpnFromDb();
-
-  // Start VPN tunnel + daemon if enabled
-  const vpnCfg = store.get("vpn");
-  const dbCfg = store.get("db");
-
-  if (vpnCfg.enabled && vpnCfg.authKey && dbCfg.tailscaleHost) {
+  // Start SSH tunnel if enabled — MUST await before starting Next.js
+  // so that the tunnel port is available in env vars
+  const sshCfg = store.get("ssh");
+  if (sshCfg.enabled && sshCfg.vpsHost && sshCfg.privateKey) {
     try {
-      await startTunnel(dbCfg.tailscaleHost, dbCfg.port || 3306, getVpnStatus().socksPort);
+      await startTunnel({
+        vpsHost: sshCfg.vpsHost,
+        vpsPort: sshCfg.vpsPort || 22,
+        sshUser: sshCfg.sshUser || "tunnel",
+        privateKey: sshCfg.privateKey,
+        remoteHost: "localhost",
+        remotePort: sshCfg.remotePort || 3307,
+      });
     } catch {
-      // Port may be in use — non-fatal
+      // Tunnel start failed — LAN-only mode, non-fatal
     }
-    // Start VPN in background (don't block app startup)
-    startVpn(vpnCfg.authKey).catch(() => {
-      // VPN start failed — LAN-only mode, non-fatal
-    });
   }
 
-  // Start Next.js with DB config as env vars
+  // Start Next.js with DB config as env vars (tunnel port now available)
   const dbEnv = getDbEnvVars();
   serverPort = await startNextServer(dbEnv);
 
@@ -559,8 +482,7 @@ app.on("window-all-closed", () => {
   }
 });
 
-app.on("before-quit", () => {
-  stopVpn();
+app.on("before-quit", async () => {
   stopTunnel();
   stopNextServer();
 });

@@ -20,18 +20,16 @@ contextBridge.exposeInMainWorld("electronAPI", {
   onUpdateStatus: (callback: (data: unknown) => void) => {
     const handler = (_event: unknown, data: unknown) => callback(data);
     ipcRenderer.on("update-status", handler);
-    // Return cleanup function
     return () => ipcRenderer.removeListener("update-status", handler);
   },
 
-  // VPN
-  getVpnConfig: () => ipcRenderer.invoke("get-vpn-config"),
-  setVpnConfig: (config: Record<string, unknown>) =>
-    ipcRenderer.invoke("set-vpn-config", config),
-  vpnStart: () => ipcRenderer.invoke("vpn-start"),
-  vpnStop: () => ipcRenderer.invoke("vpn-stop"),
-  vpnStatus: () => ipcRenderer.invoke("vpn-status"),
-  vpnRefreshFromDb: () => ipcRenderer.invoke("vpn-refresh-from-db"),
+  // SSH Tunnel
+  getSshConfig: () => ipcRenderer.invoke("get-ssh-config"),
+  setSshConfig: (config: Record<string, unknown>) =>
+    ipcRenderer.invoke("set-ssh-config", config),
+  tunnelStart: () => ipcRenderer.invoke("tunnel-start"),
+  tunnelStop: () => ipcRenderer.invoke("tunnel-stop"),
+  tunnelStatus: () => ipcRenderer.invoke("tunnel-status"),
 
   // Network scan & setup
   scanNetwork: () => ipcRenderer.invoke("scan-network"),

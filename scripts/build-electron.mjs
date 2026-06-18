@@ -47,7 +47,7 @@ if (existsSync(publicSrc)) {
 
 // Step 2: Bundle Electron with esbuild (all deps inlined → no missing modules)
 run(
-  'npx esbuild electron/main.ts --bundle --platform=node --outfile=dist-electron/main.js --external:electron --format=cjs',
+  'npx esbuild electron/main.ts --bundle --platform=node --outfile=dist-electron/main.js --external:electron --external:cpu-features --format=cjs',
   "Bundling Electron main process"
 );
 run(

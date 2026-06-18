@@ -37,7 +37,7 @@ jobs:
 
       - name: Bundle Electron with esbuild
         run: |
-          npx esbuild electron/main.ts --bundle --platform=node --outfile=dist-electron/main.js --external:electron --format=cjs
+          npx esbuild electron/main.ts --bundle --platform=node --outfile=dist-electron/main.js --external:electron --external:cpu-features --format=cjs
           npx esbuild electron/preload.ts --bundle --platform=node --outfile=dist-electron/preload.js --external:electron --format=cjs
 
       - name: Build Electron app

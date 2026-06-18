@@ -1,17 +1,22 @@
 /**
- * Ginkoyes V2 — Embedded Tailscale VPN Manager
+ * Ginkoyes V2 — L2TP/IPsec VPN Manager
  *
- * Spawns a patched tailscaled in userspace-networking mode with SOCKS5 proxy.
- * Works without admin rights on both macOS and Windows.
+ * Uses OS-native L2TP/IPsec VPN (Livebox) instead of Tailscale.
+ * Once connected, the client is on the LAN (192.168.1.x)
+ * and can reach MariaDB directly — no SOCKS5 / tunnel needed.
  *
- * macOS: uses Unix socket for IPC
- * Windows: uses named pipe for IPC (patched SDDL + syspolicy bypass)
+ * Windows: PowerShell Add-VpnConnection + rasdial
+ * macOS: .mobileconfig profile + scutil --nc
  */
 
-import { ChildProcess, spawn, execFileSync } from "child_process";
-import * as path from "path";
+import { exec as execCb } from "child_process";
+import { promisify } from "util";
 import * as fs from "fs";
+import * as path from "path";
 import { app } from "electron";
+import { randomUUID } from "crypto";
+
+const execAsync = promisify(execCb);
 
 // ============================================================
 // Types
@@ -21,213 +26,395 @@ export type VpnState = "disconnected" | "connecting" | "connected" | "error";
 
 export interface VpnStatus {
   state: VpnState;
-  ip?: string;
   error?: string;
-  socksPort: number;
+}
+
+export interface L2tpConfig {
+  serverAddress: string;
+  username: string;
+  password: string;
+  presharedKey: string;
 }
 
 // ============================================================
 // Constants
 // ============================================================
 
-/** SOCKS5 proxy port used by the embedded tailscaled */
-const SOCKS_PORT = 10055;
+const VPN_NAME = "SportLink VPN";
+const LAN_PREFIX = "192.168.1.0/24";
 
-/** Named pipe path on Windows (no admin prefix) */
-const WIN_PIPE_PATH = "\\\\.\\pipe\\SportLink-tailscaled";
+/** Polling interval when connecting (ms) */
+const POLL_CONNECTING_MS = 3000;
+/** Polling interval when connected (ms) */
+const POLL_CONNECTED_MS = 30000;
+/** Max attempts when polling for connection */
+const MAX_CONNECT_ATTEMPTS = 40; // 40 × 3s = 2 minutes
 
 // ============================================================
 // State
 // ============================================================
 
-let daemon: ChildProcess | null = null;
-let currentStatus: VpnStatus = { state: "disconnected", socksPort: SOCKS_PORT };
+let currentStatus: VpnStatus = { state: "disconnected" };
+let pollTimer: ReturnType<typeof setTimeout> | null = null;
 
 // ============================================================
-// Binary paths
+// Platform-specific helpers
 // ============================================================
 
-function getBinDir(): string {
-  if (app.isPackaged) {
-    return path.join(process.resourcesPath, "tailscale");
-  }
-  const platform =
-    process.platform === "win32"
-      ? "win"
-      : process.platform === "darwin"
-        ? "darwin"
-        : "linux";
-  return path.join(app.getAppPath(), "tailscale-bin", platform);
+async function runPowershell(cmd: string): Promise<string> {
+  const { stdout } = await execAsync(
+    `powershell -NoProfile -NonInteractive -Command "${cmd.replace(/"/g, '\\"')}"`,
+    { timeout: 30000 }
+  );
+  return stdout.trim();
 }
 
-function daemonBin(): string {
-  const ext = process.platform === "win32" ? ".exe" : "";
-  return path.join(getBinDir(), `tailscaled${ext}`);
-}
-
-function cliBin(): string {
-  const ext = process.platform === "win32" ? ".exe" : "";
-  return path.join(getBinDir(), `tailscale${ext}`);
+async function runShell(cmd: string): Promise<string> {
+  const { stdout } = await execAsync(cmd, { timeout: 30000 });
+  return stdout.trim();
 }
 
 // ============================================================
-// State directory (per-user, per-app)
+// Windows L2TP
 // ============================================================
 
-function getStateDir(): string {
-  const dir = path.join(app.getPath("userData"), "tailscale");
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  return dir;
-}
-
-function getSocketPath(): string {
-  if (process.platform === "win32") return WIN_PIPE_PATH;
-  return path.join(getStateDir(), "tailscaled.sock");
-}
-
-// ============================================================
-// CLI helper — adds --socket flag for IPC
-// ============================================================
-
-function runCli(args: string[], timeoutMs: number = 30_000): string {
-  const sock = getSocketPath();
-  // --socket is a global flag and must come BEFORE the subcommand
-  const fullArgs = [`--socket=${sock}`, ...args];
-  console.log("[VPN] runCli:", cliBin(), fullArgs.join(" "));
+async function windowsEnsureProfile(config: L2tpConfig): Promise<void> {
+  // Check if profile already exists
   try {
-    const result = execFileSync(cliBin(), fullArgs, { timeout: timeoutMs }).toString().trim();
-    console.log("[VPN] runCli result:", result);
-    return result;
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error("[VPN] runCli error:", msg);
-    throw err;
+    const existing = await runPowershell(
+      `(Get-VpnConnection -Name '${VPN_NAME}' -ErrorAction SilentlyContinue).Name`
+    );
+    if (existing === VPN_NAME) {
+      // Update PSK and server if needed
+      await runPowershell(
+        `Set-VpnConnection -Name '${VPN_NAME}' -ServerAddress '${config.serverAddress}' -L2tpPsk '${config.presharedKey}' -Force`
+      );
+      return;
+    }
+  } catch {
+    // Profile doesn't exist — create it
+  }
+
+  await runPowershell(
+    `Add-VpnConnection -Name '${VPN_NAME}' ` +
+    `-ServerAddress '${config.serverAddress}' ` +
+    `-TunnelType L2tp ` +
+    `-L2tpPsk '${config.presharedKey}' ` +
+    `-AuthenticationMethod MSChapv2 ` +
+    `-EncryptionLevel Optional ` +
+    `-Force`
+  );
+
+  // Add split tunnel route so only LAN traffic goes through VPN
+  try {
+    await runPowershell(
+      `Add-VpnConnectionRoute -ConnectionName '${VPN_NAME}' -DestinationPrefix '${LAN_PREFIX}'`
+    );
+    // Enable split tunneling
+    await runPowershell(
+      `Set-VpnConnection -Name '${VPN_NAME}' -SplitTunneling $true -Force`
+    );
+  } catch {
+    // Route may already exist
+  }
+}
+
+async function windowsConnect(config: L2tpConfig): Promise<void> {
+  await execAsync(
+    `rasdial "${VPN_NAME}" "${config.username}" "${config.password}"`,
+    { timeout: 30000 }
+  );
+}
+
+async function windowsDisconnect(): Promise<void> {
+  try {
+    await execAsync(`rasdial "${VPN_NAME}" /disconnect`, { timeout: 10000 });
+  } catch {
+    // May not be connected
+  }
+}
+
+async function windowsGetStatus(): Promise<VpnState> {
+  try {
+    const status = await runPowershell(
+      `(Get-VpnConnection -Name '${VPN_NAME}' -ErrorAction SilentlyContinue).ConnectionStatus`
+    );
+    if (status === "Connected") return "connected";
+    if (status === "Connecting") return "connecting";
+    return "disconnected";
+  } catch {
+    return "disconnected";
   }
 }
 
 // ============================================================
-// Start / Stop / Status
+// macOS L2TP — via .mobileconfig profile + scutil --nc
 // ============================================================
 
-export async function startVpn(authKey: string): Promise<VpnStatus> {
+/**
+ * Escape XML special characters for .mobileconfig plist values.
+ */
+function xmlEscape(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+/**
+ * Generate a .mobileconfig (Configuration Profile) for L2TP/IPsec VPN.
+ * Once installed via System Settings, the VPN can be managed with scutil --nc.
+ */
+function generateMobileConfig(config: L2tpConfig): string {
+  const payloadUUID = randomUUID().toUpperCase();
+  const vpnPayloadUUID = randomUUID().toUpperCase();
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>PayloadContent</key>
+  <array>
+    <dict>
+      <key>PayloadType</key>
+      <string>com.apple.vpn.managed</string>
+      <key>PayloadIdentifier</key>
+      <string>com.sportlink.vpn.l2tp</string>
+      <key>PayloadUUID</key>
+      <string>${vpnPayloadUUID}</string>
+      <key>PayloadVersion</key>
+      <integer>1</integer>
+      <key>PayloadDisplayName</key>
+      <string>VPN (L2TP)</string>
+      <key>UserDefinedName</key>
+      <string>${xmlEscape(VPN_NAME)}</string>
+      <key>VPNType</key>
+      <string>L2TP</string>
+      <key>PPP</key>
+      <dict>
+        <key>AuthName</key>
+        <string>${xmlEscape(config.username)}</string>
+        <key>AuthPassword</key>
+        <string>${xmlEscape(config.password)}</string>
+        <key>CommRemoteAddress</key>
+        <string>${xmlEscape(config.serverAddress)}</string>
+      </dict>
+      <key>IPSec</key>
+      <dict>
+        <key>AuthenticationMethod</key>
+        <string>SharedSecret</string>
+        <key>SharedSecret</key>
+        <string>${xmlEscape(config.presharedKey)}</string>
+      </dict>
+    </dict>
+  </array>
+  <key>PayloadDisplayName</key>
+  <string>${xmlEscape(VPN_NAME)}</string>
+  <key>PayloadIdentifier</key>
+  <string>com.sportlink.vpn</string>
+  <key>PayloadType</key>
+  <string>Configuration</string>
+  <key>PayloadUUID</key>
+  <string>${payloadUUID}</string>
+  <key>PayloadVersion</key>
+  <integer>1</integer>
+  <key>PayloadRemovalDisallowed</key>
+  <false/>
+</dict>
+</plist>`;
+}
+
+/**
+ * Check if a VPN service with our name exists via scutil --nc list.
+ */
+async function macVpnExists(): Promise<boolean> {
+  try {
+    const output = await runShell(`scutil --nc list`);
+    return output.includes(`"${VPN_NAME}"`);
+  } catch {
+    return false;
+  }
+}
+
+async function macEnsureProfile(config: L2tpConfig): Promise<void> {
+  if (await macVpnExists()) {
+    console.log("[VPN] macOS: VPN profile already installed");
+    return;
+  }
+
+  // Generate .mobileconfig and open it for user installation
+  const profilePath = path.join(app.getPath("userData"), "SportLink-VPN.mobileconfig");
+  fs.writeFileSync(profilePath, generateMobileConfig(config), "utf-8");
+  console.log("[VPN] macOS: Generated mobileconfig at", profilePath);
+
+  await runShell(`open "${profilePath}"`);
+
+  throw new Error(
+    "Profil VPN cree. Installez-le dans Reglages Systeme > " +
+    "Confidentialite et securite > Profils, puis relancez le VPN."
+  );
+}
+
+async function macConnect(_config: L2tpConfig): Promise<void> {
+  await runShell(`scutil --nc start '${VPN_NAME}'`);
+}
+
+async function macDisconnect(): Promise<void> {
+  try {
+    await runShell(`scutil --nc stop '${VPN_NAME}'`);
+  } catch {
+    // May not be connected
+  }
+}
+
+async function macGetStatus(): Promise<VpnState> {
+  try {
+    const output = await runShell(`scutil --nc status '${VPN_NAME}'`);
+    const firstLine = output.split("\n")[0].trim().toLowerCase();
+    if (firstLine === "connected") return "connected";
+    if (firstLine === "connecting" || firstLine === "authenticating") return "connecting";
+    return "disconnected";
+  } catch {
+    return "disconnected";
+  }
+}
+
+// ============================================================
+// Cross-platform API
+// ============================================================
+
+async function ensureProfile(config: L2tpConfig): Promise<void> {
+  if (process.platform === "win32") {
+    await windowsEnsureProfile(config);
+  } else if (process.platform === "darwin") {
+    await macEnsureProfile(config);
+  } else {
+    throw new Error("VPN L2TP non supporte sur cette plateforme");
+  }
+}
+
+async function connectVpn(config: L2tpConfig): Promise<void> {
+  if (process.platform === "win32") {
+    await windowsConnect(config);
+  } else if (process.platform === "darwin") {
+    await macConnect(config);
+  }
+}
+
+async function disconnectVpn(): Promise<void> {
+  if (process.platform === "win32") {
+    await windowsDisconnect();
+  } else if (process.platform === "darwin") {
+    await macDisconnect();
+  }
+}
+
+async function queryOsStatus(): Promise<VpnState> {
+  if (process.platform === "win32") {
+    return windowsGetStatus();
+  } else if (process.platform === "darwin") {
+    return macGetStatus();
+  }
+  return "disconnected";
+}
+
+// ============================================================
+// Status polling
+// ============================================================
+
+function stopPolling(): void {
+  if (pollTimer) {
+    clearTimeout(pollTimer);
+    pollTimer = null;
+  }
+}
+
+function startPolling(): void {
+  stopPolling();
+
+  let attempt = 0;
+
+  const poll = async () => {
+    try {
+      const osState = await queryOsStatus();
+
+      if (osState === "connected") {
+        currentStatus = { state: "connected" };
+        // Continue polling at slow rate to detect disconnection
+        pollTimer = setTimeout(poll, POLL_CONNECTED_MS);
+        return;
+      }
+
+      if (currentStatus.state === "connecting") {
+        attempt++;
+        if (attempt >= MAX_CONNECT_ATTEMPTS) {
+          currentStatus = {
+            state: "error",
+            error: "VPN: timeout en attente de connexion",
+          };
+          return;
+        }
+        // Keep polling at fast rate
+        pollTimer = setTimeout(poll, POLL_CONNECTING_MS);
+        return;
+      }
+
+      // OS says disconnected and we weren't connecting
+      if (currentStatus.state === "connected") {
+        // Was connected, now disconnected — update state
+        currentStatus = { state: "disconnected" };
+      }
+      // Slow poll to detect external connections
+      pollTimer = setTimeout(poll, POLL_CONNECTED_MS);
+    } catch {
+      pollTimer = setTimeout(poll, POLL_CONNECTED_MS);
+    }
+  };
+
+  pollTimer = setTimeout(poll, POLL_CONNECTING_MS);
+}
+
+// ============================================================
+// Public API
+// ============================================================
+
+export async function startVpn(config: L2tpConfig): Promise<VpnStatus> {
   if (currentStatus.state === "connected" || currentStatus.state === "connecting") {
     return currentStatus;
   }
 
-  if (!fs.existsSync(daemonBin())) {
-    currentStatus = {
-      state: "error",
-      error: `Binaire Tailscale introuvable : ${daemonBin()}`,
-      socksPort: SOCKS_PORT,
-    };
-    return currentStatus;
-  }
-
-  currentStatus = { state: "connecting", socksPort: SOCKS_PORT };
+  currentStatus = { state: "connecting" };
 
   try {
-    const stateDir = getStateDir();
-    const sock = getSocketPath();
+    console.log("[VPN] Ensuring L2TP profile...");
+    await ensureProfile(config);
 
-    // Clean up stale socket from previous run (Unix only)
-    if (process.platform !== "win32" && fs.existsSync(sock)) {
-      console.log("[VPN] Removing stale socket:", sock);
-      fs.unlinkSync(sock);
-    }
+    console.log("[VPN] Connecting...");
+    await connectVpn(config);
 
-    const args = [
-      "--tun=userspace-networking",
-      `--statedir=${stateDir}`,
-      `--socks5-server=localhost:${SOCKS_PORT}`,
-      `--socket=${sock}`,
-      "--no-logs-no-support",
-      "--port=0",
-    ];
+    // Start polling for connection status
+    startPolling();
 
-    console.log("[VPN] Spawning daemon:", daemonBin(), args);
-    daemon = spawn(daemonBin(), args, {
-      stdio: ["ignore", "pipe", "pipe"],
-      windowsHide: true,
-      detached: false,
-    });
-
-    // Capture stderr for debugging
-    let stderrData = "";
-    daemon.stderr?.on("data", (chunk: Buffer) => {
-      const line = chunk.toString();
-      stderrData += line;
-      console.log("[VPN][daemon-stderr]", line.trim());
-    });
-
-    daemon.stdout?.on("data", (chunk: Buffer) => {
-      console.log("[VPN][daemon-stdout]", chunk.toString().trim());
-    });
-
-    daemon.on("error", (err) => {
-      console.error("[VPN] Daemon spawn error:", err.message);
-      currentStatus = {
-        state: "error",
-        error: `Erreur lancement daemon: ${err.message}`,
-        socksPort: SOCKS_PORT,
-      };
-      daemon = null;
-    });
-
-    daemon.on("exit", (code) => {
-      console.log("[VPN] Daemon exited with code:", code, "stderr:", stderrData.slice(0, 500));
-      if (currentStatus.state === "connected" || currentStatus.state === "connecting") {
-        currentStatus = {
-          state: "error",
-          error: `tailscaled a quitte avec le code ${code}`,
-          socksPort: SOCKS_PORT,
-        };
-      }
-      daemon = null;
-    });
-
-    // Wait for daemon to start up
-    await new Promise((r) => setTimeout(r, 3000));
-    console.log("[VPN] After wait — daemon alive:", !!daemon && !daemon.killed, "pid:", daemon?.pid);
-
-    if (!daemon || daemon.killed) {
-      throw new Error("tailscaled n'a pas demarre");
-    }
-
-    runCli(["up", `--auth-key=${authKey}`, "--reset"]);
-
-    const ip = runCli(["ip", "-4"], 5000);
-
-    currentStatus = { state: "connected", ip, socksPort: SOCKS_PORT };
     return currentStatus;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    currentStatus = { state: "error", error: msg, socksPort: SOCKS_PORT };
-    stopVpn();
+    console.error("[VPN] Start error:", msg);
+    currentStatus = { state: "error", error: msg };
     return currentStatus;
   }
 }
 
-export function stopVpn(): void {
-  if (daemon) {
-    if (process.platform === "win32") {
-      // On Windows, SIGTERM doesn't work well — use taskkill
-      try {
-        process.kill(daemon.pid!, "SIGTERM");
-      } catch {
-        // ignore
-      }
-    } else {
-      daemon.kill("SIGTERM");
-    }
-    daemon = null;
+export async function stopVpn(): Promise<void> {
+  stopPolling();
+  try {
+    await disconnectVpn();
+  } catch (err) {
+    console.error("[VPN] Stop error:", err instanceof Error ? err.message : String(err));
   }
-  currentStatus = { state: "disconnected", socksPort: SOCKS_PORT };
+  currentStatus = { state: "disconnected" };
 }
 
 export function getVpnStatus(): VpnStatus {
   return { ...currentStatus };
-}
-
-export function getSocksPort(): number {
-  return SOCKS_PORT;
 }

@@ -8,43 +8,31 @@ import { useState, useEffect, useCallback } from "react";
 
 interface DbConfig {
   lanHost: string;
-  tailscaleHost: string;
   port: number;
   user: string;
   password: string;
   database: string;
 }
 
-interface VpnConfig {
-  authKey: string;
+interface SshConfig {
+  vpsHost: string;
+  vpsPort: number;
+  sshUser: string;
+  privateKey: string;
+  remotePort: number;
   enabled: boolean;
 }
 
-interface VpnStatus {
+interface TunnelStatus {
   state: "disconnected" | "connecting" | "connected" | "error";
-  ip?: string;
+  localPort?: number;
   error?: string;
-  socksPort: number;
 }
 
 interface TestResult {
   success: boolean;
   articleCount?: number;
   error?: string;
-}
-
-interface UpdateCheckResult {
-  updateAvailable: boolean;
-  currentCommit: string;
-  remoteCommit: string;
-  behindCount: number;
-  error?: string;
-}
-
-interface UpdateInstallResult {
-  success: boolean;
-  message: string;
-  logs: string[];
 }
 
 interface ServerResult {
@@ -66,20 +54,23 @@ function getApi(): ElectronAPI | null {
 
 const defaultDbConfig: DbConfig = {
   lanHost: "192.168.1.100",
-  tailscaleHost: "",
   port: 3306,
   user: "ginkoyes",
   password: "ginkoyes",
   database: "ginkoyes",
 };
 
-const defaultVpnConfig: VpnConfig = {
-  authKey: "",
+const defaultSshConfig: SshConfig = {
+  vpsHost: "85.215.176.58",
+  vpsPort: 22,
+  sshUser: "tunnel",
+  privateKey: "",
+  remotePort: 3307,
   enabled: false,
 };
 
 // ============================================================
-// Shared input class
+// Shared styles
 // ============================================================
 
 const inputCls =
@@ -97,9 +88,9 @@ export default function SettingsPage() {
   // --- DB state ---
   const [config, setConfig] = useState<DbConfig>(defaultDbConfig);
   const [lanTest, setLanTest] = useState<TestResult | null>(null);
-  const [tailscaleTest, setTailscaleTest] = useState<TestResult | null>(null);
+  const [tunnelTest, setTunnelTest] = useState<TestResult | null>(null);
   const [testingLan, setTestingLan] = useState(false);
-  const [testingTailscale, setTestingTailscale] = useState(false);
+  const [testingTunnel, setTestingTunnel] = useState(false);
   const [saved, setSaved] = useState(false);
   const [isElectron, setIsElectron] = useState(false);
 
@@ -109,22 +100,25 @@ export default function SettingsPage() {
   const [scanDone, setScanDone] = useState(false);
   const [scanError, setScanError] = useState("");
 
-  // --- VPN state ---
-  const [vpnConfig, setVpnConfig] = useState<VpnConfig>(defaultVpnConfig);
-  const [vpnStatus, setVpnStatus] = useState<VpnStatus | null>(null);
-  const [vpnLoading, setVpnLoading] = useState(false);
-  const [vpnRefreshing, setVpnRefreshing] = useState(false);
-  const [vpnSaved, setVpnSaved] = useState(false);
+  // --- SSH Tunnel state ---
+  const [sshConfig, setSshConfig] = useState<SshConfig>(defaultSshConfig);
+  const [tunnelStatus, setTunnelStatus] = useState<TunnelStatus | null>(null);
+  const [tunnelLoading, setTunnelLoading] = useState(false);
+  const [sshSaved, setSshSaved] = useState(false);
 
   // --- Update state ---
-  const [updateCheck, setUpdateCheck] = useState<UpdateCheckResult | null>(null);
   const [checking, setChecking] = useState(false);
-  const [installing, setInstalling] = useState(false);
-  const [installResult, setInstallResult] = useState<UpdateInstallResult | null>(null);
   const [checkError, setCheckError] = useState("");
-
-  // --- Is packaged (for update method selection) ---
   const [isPackaged, setIsPackaged] = useState(false);
+  const [electronUpdateStatus, setElectronUpdateStatus] = useState("");
+  const [electronUpdateAvailable, setElectronUpdateAvailable] = useState(false);
+  const [electronDownloadProgress, setElectronDownloadProgress] = useState<number | null>(null);
+  const [electronUpdateReady, setElectronUpdateReady] = useState(false);
+
+  // Dev update state
+  const [updateCheck, setUpdateCheck] = useState<{ updateAvailable: boolean; currentCommit: string; remoteCommit: string; behindCount: number } | null>(null);
+  const [installing, setInstalling] = useState(false);
+  const [installResult, setInstallResult] = useState<{ success: boolean; message: string; logs: string[] } | null>(null);
 
   // --- Load config on mount ---
   useEffect(() => {
@@ -135,28 +129,28 @@ export default function SettingsPage() {
     api.getDbConfig().then((cfg: DbConfig) => {
       if (cfg) setConfig(cfg);
     });
-    api.getVpnConfig().then((cfg: VpnConfig) => {
-      if (cfg) setVpnConfig(cfg);
+    api.getSshConfig().then((cfg: SshConfig) => {
+      if (cfg) setSshConfig(cfg);
     });
-    api.vpnStatus().then((s: VpnStatus) => {
-      if (s) setVpnStatus(s);
+    api.tunnelStatus().then((s: TunnelStatus) => {
+      if (s) setTunnelStatus(s);
     });
     if (api.isPackaged) {
       api.isPackaged().then((v: boolean) => setIsPackaged(v));
     }
   }, []);
 
-  // --- Poll VPN status while connecting ---
+  // --- Poll tunnel status while connecting ---
   useEffect(() => {
-    if (!isElectron || vpnStatus?.state !== "connecting") return;
+    if (!isElectron || tunnelStatus?.state !== "connecting") return;
     const timer = setInterval(() => {
       const api = getApi();
       if (api) {
-        api.vpnStatus().then((s: VpnStatus) => setVpnStatus(s));
+        api.tunnelStatus().then((s: TunnelStatus) => setTunnelStatus(s));
       }
     }, 2000);
     return () => clearInterval(timer);
-  }, [isElectron, vpnStatus?.state]);
+  }, [isElectron, tunnelStatus?.state]);
 
   // --- DB helpers ---
 
@@ -193,18 +187,18 @@ export default function SettingsPage() {
     }
   }
 
-  async function testTailscaleConnection() {
+  async function testTunnelConnection() {
     const api = getApi();
     if (!api) return;
-    setTestingTailscale(true);
-    setTailscaleTest(null);
+    setTestingTunnel(true);
+    setTunnelTest(null);
     try {
       const result = await api.testDbViaTunnel();
-      setTailscaleTest(result);
+      setTunnelTest(result);
     } catch (err) {
-      setTailscaleTest({ success: false, error: String(err) });
+      setTunnelTest({ success: false, error: String(err) });
     } finally {
-      setTestingTailscale(false);
+      setTestingTunnel(false);
     }
   }
 
@@ -243,78 +237,90 @@ export default function SettingsPage() {
     setTimeout(() => setSaved(false), 3000);
   }
 
-  // --- VPN helpers ---
+  // --- SSH Tunnel helpers ---
 
-  const refreshVpnStatus = useCallback(async () => {
+  const refreshTunnelStatus = useCallback(async () => {
     const api = getApi();
     if (!api) return;
-    const s = await api.vpnStatus();
-    setVpnStatus(s);
+    const s = await api.tunnelStatus();
+    setTunnelStatus(s);
   }, []);
 
-  async function handleVpnStart() {
+  function updateSshField(field: keyof SshConfig, value: string | number | boolean) {
+    setSshConfig((prev) => ({ ...prev, [field]: value }));
+    setSshSaved(false);
+  }
+
+  async function handleSshSave() {
     const api = getApi();
     if (!api) return;
-    setVpnLoading(true);
+    await api.setSshConfig(sshConfig);
+    setSshSaved(true);
+    setTimeout(() => setSshSaved(false), 3000);
+  }
+
+  async function handleTunnelStart() {
+    const api = getApi();
+    if (!api) return;
+    await api.setSshConfig(sshConfig);
+    setTunnelLoading(true);
     try {
-      const result = await api.vpnStart();
-      if (!result.success && result.status?.error) {
-        setVpnStatus(result.status);
+      const result = await api.tunnelStart();
+      if (result.status) {
+        setTunnelStatus(result.status);
       }
-      await refreshVpnStatus();
+      await refreshTunnelStatus();
     } catch (err) {
-      setVpnStatus({ state: "error", error: String(err), socksPort: 0 });
+      setTunnelStatus({ state: "error", error: String(err) });
     } finally {
-      setVpnLoading(false);
+      setTunnelLoading(false);
     }
   }
 
-  async function handleVpnStop() {
+  async function handleTunnelStop() {
     const api = getApi();
     if (!api) return;
-    setVpnLoading(true);
+    setTunnelLoading(true);
     try {
-      await api.vpnStop();
-      await refreshVpnStatus();
+      await api.tunnelStop();
+      await refreshTunnelStatus();
     } finally {
-      setVpnLoading(false);
+      setTunnelLoading(false);
     }
   }
 
-  async function handleVpnToggle(enabled: boolean) {
+  async function handleTunnelToggle(enabled: boolean) {
     const api = getApi();
     if (!api) return;
-    const newCfg = { ...vpnConfig, enabled };
-    setVpnConfig(newCfg);
-    await api.setVpnConfig(newCfg);
-    setVpnSaved(true);
-    setTimeout(() => setVpnSaved(false), 3000);
+    const newCfg = { ...sshConfig, enabled };
+    setSshConfig(newCfg);
+    await api.setSshConfig(newCfg);
+    setSshSaved(true);
+    setTimeout(() => setSshSaved(false), 3000);
   }
 
-  async function handleRefreshFromDb() {
-    const api = getApi();
-    if (!api) return;
-    setVpnRefreshing(true);
-    try {
-      const result = await api.vpnRefreshFromDb();
-      if (result.success) {
-        if (result.vpn) setVpnConfig(result.vpn);
-        if (result.tailscaleHost) {
-          setConfig((prev) => ({ ...prev, tailscaleHost: result.tailscaleHost }));
-        }
-      }
-    } finally {
-      setVpnRefreshing(false);
+  // --- Tunnel status helpers ---
+
+  function tunnelDotColor() {
+    switch (tunnelStatus?.state) {
+      case "connected": return "bg-green-500";
+      case "connecting": return "bg-yellow-400 animate-pulse";
+      case "error": return "bg-red-500";
+      default: return "bg-gray-400";
     }
   }
 
-  // --- Electron auto-update state ---
-  const [electronUpdateStatus, setElectronUpdateStatus] = useState("");
-  const [electronUpdateAvailable, setElectronUpdateAvailable] = useState(false);
-  const [electronDownloadProgress, setElectronDownloadProgress] = useState<number | null>(null);
-  const [electronUpdateReady, setElectronUpdateReady] = useState(false);
+  function tunnelStateLabel() {
+    switch (tunnelStatus?.state) {
+      case "connected": return `Connecte (port ${tunnelStatus.localPort})`;
+      case "connecting": return "Connexion en cours...";
+      case "error": return tunnelStatus.error || "Erreur";
+      default: return "Deconnecte";
+    }
+  }
 
-  // Listen for electron-updater events
+  // --- Update helpers ---
+
   useEffect(() => {
     const api = getApi();
     if (!api || !api.onUpdateStatus) return;
@@ -351,12 +357,9 @@ export default function SettingsPage() {
     return unsub;
   }, []);
 
-  // --- Update helpers ---
-
   async function handleCheckUpdate() {
     const api = getApi();
     if (api && isPackaged) {
-      // Use electron-updater (packaged app only)
       setChecking(true);
       setCheckError("");
       setElectronUpdateStatus("Verification...");
@@ -372,7 +375,6 @@ export default function SettingsPage() {
       }
       return;
     }
-    // Fallback: git-based check (dev mode)
     setChecking(true);
     setCheckError("");
     setUpdateCheck(null);
@@ -425,31 +427,6 @@ export default function SettingsPage() {
     }
   }
 
-  // --- VPN status helpers ---
-
-  function vpnDotColor() {
-    switch (vpnStatus?.state) {
-      case "connected": return "bg-green-500";
-      case "connecting": return "bg-yellow-400 animate-pulse";
-      case "error": return "bg-red-500";
-      default: return "bg-gray-400";
-    }
-  }
-
-  function vpnStateLabel() {
-    switch (vpnStatus?.state) {
-      case "connected": return `Connecte${vpnStatus.ip ? ` (${vpnStatus.ip})` : ""}`;
-      case "connecting": return "Connexion en cours...";
-      case "error": return vpnStatus.error || "Erreur";
-      default: return "Deconnecte";
-    }
-  }
-
-  function maskKey(key: string) {
-    if (!key || key.length < 12) return key || "";
-    return key.slice(0, 6) + "..." + key.slice(-4);
-  }
-
   // ============================================================
   // Render
   // ============================================================
@@ -459,7 +436,7 @@ export default function SettingsPage() {
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Parametres</h1>
         <p className="mt-1 text-sm text-gray-500">
-          Configuration de la connexion et du VPN
+          Configuration de la connexion et du tunnel SSH
         </p>
       </div>
 
@@ -481,67 +458,35 @@ export default function SettingsPage() {
         </div>
 
         <div className="space-y-6 p-6">
-          {/* LAN Host + Tailscale Host */}
-          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-            <div>
-              <label className="block text-sm font-medium text-gray-700">
-                IP LAN (reseau local)
-              </label>
-              <div className="mt-1 flex gap-2">
-                <input
-                  type="text"
-                  value={config.lanHost}
-                  onChange={(e) => updateField("lanHost", e.target.value)}
-                  placeholder="192.168.1.100"
-                  className={inputCls}
-                />
-                <button
-                  onClick={() => testConnection(config.lanHost, setLanTest, setTestingLan)}
-                  disabled={testingLan || !config.lanHost}
-                  className={btnSmall}
-                >
-                  {testingLan ? "Test..." : "Tester"}
-                </button>
-              </div>
-              {lanTest && (
-                <div className={`mt-2 flex items-center gap-2 text-sm ${lanTest.success ? "text-green-600" : "text-red-600"}`}>
-                  <span className={`inline-block h-2 w-2 rounded-full ${lanTest.success ? "bg-green-500" : "bg-red-500"}`} />
-                  {lanTest.success
-                    ? `Connecte (${lanTest.articleCount} articles)`
-                    : lanTest.error}
-                </div>
-              )}
+          {/* LAN Host */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700">
+              IP LAN (reseau local)
+            </label>
+            <div className="mt-1 flex gap-2">
+              <input
+                type="text"
+                value={config.lanHost}
+                onChange={(e) => updateField("lanHost", e.target.value)}
+                placeholder="192.168.1.100"
+                className={inputCls}
+              />
+              <button
+                onClick={() => testConnection(config.lanHost, setLanTest, setTestingLan)}
+                disabled={testingLan || !config.lanHost}
+                className={btnSmall}
+              >
+                {testingLan ? "Test..." : "Tester"}
+              </button>
             </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700">
-                IP Tailscale (VPN)
-              </label>
-              <div className="mt-1 flex gap-2">
-                <input
-                  type="text"
-                  value={config.tailscaleHost}
-                  onChange={(e) => updateField("tailscaleHost", e.target.value)}
-                  placeholder="100.x.x.x"
-                  className={inputCls}
-                />
-                <button
-                  onClick={() => testTailscaleConnection()}
-                  disabled={testingTailscale || !config.tailscaleHost}
-                  className={btnSmall}
-                >
-                  {testingTailscale ? "Test..." : "Tester"}
-                </button>
+            {lanTest && (
+              <div className={`mt-2 flex items-center gap-2 text-sm ${lanTest.success ? "text-green-600" : "text-red-600"}`}>
+                <span className={`inline-block h-2 w-2 rounded-full ${lanTest.success ? "bg-green-500" : "bg-red-500"}`} />
+                {lanTest.success
+                  ? `Connecte (${lanTest.articleCount} articles)`
+                  : lanTest.error}
               </div>
-              {tailscaleTest && (
-                <div className={`mt-2 flex items-center gap-2 text-sm ${tailscaleTest.success ? "text-green-600" : "text-red-600"}`}>
-                  <span className={`inline-block h-2 w-2 rounded-full ${tailscaleTest.success ? "bg-green-500" : "bg-red-500"}`} />
-                  {tailscaleTest.success
-                    ? `Connecte (${tailscaleTest.articleCount} articles)`
-                    : tailscaleTest.error}
-                </div>
-              )}
-            </div>
+            )}
           </div>
 
           {/* Network scan */}
@@ -650,22 +595,21 @@ export default function SettingsPage() {
       </div>
 
       {/* ================================================== */}
-      {/* SECTION 2 : VPN Tailscale                          */}
+      {/* SECTION 2 : Tunnel SSH (Relais VPS)                */}
       {/* ================================================== */}
       <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
         <div className="border-b border-gray-200 px-6 py-4">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-lg font-semibold text-gray-900">VPN Tailscale</h2>
+              <h2 className="text-lg font-semibold text-gray-900">Tunnel SSH</h2>
               <p className="mt-0.5 text-sm text-gray-500">
-                Tunnel securise pour l&apos;acces distant
+                Connexion distante via relais SSH (VPS)
               </p>
             </div>
-            {/* Status badge */}
-            {isElectron && vpnStatus && (
+            {isElectron && tunnelStatus && (
               <div className="flex items-center gap-2 rounded-full border border-gray-200 px-3 py-1.5">
-                <span className={`inline-block h-2.5 w-2.5 rounded-full ${vpnDotColor()}`} />
-                <span className="text-sm font-medium text-gray-700">{vpnStateLabel()}</span>
+                <span className={`inline-block h-2.5 w-2.5 rounded-full ${tunnelDotColor()}`} />
+                <span className="text-sm font-medium text-gray-700">{tunnelStateLabel()}</span>
               </div>
             )}
           </div>
@@ -675,94 +619,156 @@ export default function SettingsPage() {
           {/* Info box */}
           <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-4">
             <p className="text-sm text-zinc-700">
-              La configuration VPN est recuperee automatiquement depuis la base de donnees
-              du serveur lors d&apos;une connexion en reseau local. Vous pouvez aussi la rafraichir
-              manuellement.
+              Le tunnel SSH permet d&apos;acceder a la base de donnees du magasin depuis n&apos;importe ou,
+              en passant par un serveur VPS relais. Le trafic est entierement chiffre.
             </p>
           </div>
 
-          {/* Server IP + Auth key (read-only, auto-configured) */}
+          {/* VPS Host + Port */}
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
             <div>
               <label className="block text-sm font-medium text-gray-700">
-                IP Tailscale du serveur
+                Adresse du VPS
               </label>
               <input
                 type="text"
-                value={config.tailscaleHost}
-                readOnly
-                className={`mt-1 ${inputCls} bg-gray-50 text-gray-500`}
+                value={sshConfig.vpsHost}
+                onChange={(e) => updateSshField("vpsHost", e.target.value)}
+                placeholder="85.215.176.58"
+                className={`mt-1 ${inputCls}`}
               />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700">
-                Auth key
+                Port SSH
+              </label>
+              <input
+                type="number"
+                value={sshConfig.vpsPort}
+                onChange={(e) => updateSshField("vpsPort", parseInt(e.target.value, 10) || 22)}
+                className={`mt-1 ${inputCls}`}
+              />
+            </div>
+          </div>
+
+          {/* SSH User + Remote Port */}
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+            <div>
+              <label className="block text-sm font-medium text-gray-700">
+                Utilisateur SSH
               </label>
               <input
                 type="text"
-                value={maskKey(vpnConfig.authKey)}
-                readOnly
-                className={`mt-1 ${inputCls} bg-gray-50 text-gray-500`}
+                value={sshConfig.sshUser}
+                onChange={(e) => updateSshField("sshUser", e.target.value)}
+                placeholder="tunnel"
+                className={`mt-1 ${inputCls}`}
               />
             </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700">
+                Port distant (VPS)
+              </label>
+              <input
+                type="number"
+                value={sshConfig.remotePort}
+                onChange={(e) => updateSshField("remotePort", parseInt(e.target.value, 10) || 3307)}
+                className={`mt-1 ${inputCls}`}
+              />
+            </div>
+          </div>
+
+          {/* Private Key */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700">
+              Cle privee SSH
+            </label>
+            <textarea
+              value={sshConfig.privateKey}
+              onChange={(e) => updateSshField("privateKey", e.target.value)}
+              placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;...&#10;-----END OPENSSH PRIVATE KEY-----"
+              rows={4}
+              className={`mt-1 font-mono text-xs ${inputCls}`}
+            />
+            <p className="mt-1 text-xs text-gray-500">
+              Collez la cle privee Ed25519 pour l&apos;authentification SSH vers le VPS
+            </p>
           </div>
 
           {/* Enable toggle */}
           <div className="flex items-center gap-3">
             <button
-              onClick={() => handleVpnToggle(!vpnConfig.enabled)}
-              disabled={!isElectron || !vpnConfig.authKey}
+              onClick={() => handleTunnelToggle(!sshConfig.enabled)}
+              disabled={!isElectron || !sshConfig.vpsHost || !sshConfig.privateKey}
               className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out disabled:cursor-not-allowed disabled:opacity-50 ${
-                vpnConfig.enabled ? "bg-slate-700" : "bg-gray-200"
+                sshConfig.enabled ? "bg-slate-700" : "bg-gray-200"
               }`}
             >
               <span
                 className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                  vpnConfig.enabled ? "translate-x-5" : "translate-x-0"
+                  sshConfig.enabled ? "translate-x-5" : "translate-x-0"
                 }`}
               />
             </button>
             <span className="text-sm font-medium text-gray-700">
-              Activer le VPN au demarrage
+              Activer le tunnel au demarrage
             </span>
-            {vpnSaved && (
-              <span className="text-sm text-green-600">Sauvegarde</span>
-            )}
           </div>
 
+          {/* Test tunnel connection */}
+          {tunnelStatus?.state === "connected" && (
+            <div className="flex items-center gap-3">
+              <button
+                onClick={testTunnelConnection}
+                disabled={testingTunnel}
+                className={btnSmall}
+              >
+                {testingTunnel ? "Test..." : "Tester la connexion DB via tunnel"}
+              </button>
+              {tunnelTest && (
+                <span className={`flex items-center gap-2 text-sm ${tunnelTest.success ? "text-green-600" : "text-red-600"}`}>
+                  <span className={`inline-block h-2 w-2 rounded-full ${tunnelTest.success ? "bg-green-500" : "bg-red-500"}`} />
+                  {tunnelTest.success
+                    ? `Connecte (${tunnelTest.articleCount} articles)`
+                    : tunnelTest.error}
+                </span>
+              )}
+            </div>
+          )}
+
           {/* Error message */}
-          {vpnStatus?.state === "error" && (
+          {tunnelStatus?.state === "error" && (
             <div className="rounded-lg border border-red-200 bg-red-50 p-4">
-              <p className="text-sm text-red-800">{vpnStatus.error}</p>
+              <p className="text-sm text-red-800">{tunnelStatus.error}</p>
             </div>
           )}
         </div>
 
         {/* Actions */}
         <div className="flex flex-wrap items-center gap-3 border-t border-gray-200 px-6 py-4">
-          <button
-            onClick={handleRefreshFromDb}
-            disabled={!isElectron || vpnRefreshing}
-            className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-          >
-            {vpnRefreshing ? "Rafraichissement..." : "Rafraichir depuis la base"}
+          <button onClick={handleSshSave} disabled={!isElectron} className={btnPrimary}>
+            Sauvegarder SSH
           </button>
 
-          {vpnStatus?.state !== "connected" ? (
+          {sshSaved && (
+            <span className="text-sm text-green-600">Sauvegarde</span>
+          )}
+
+          {tunnelStatus?.state !== "connected" ? (
             <button
-              onClick={handleVpnStart}
-              disabled={!isElectron || vpnLoading || !vpnConfig.authKey || !config.tailscaleHost}
+              onClick={handleTunnelStart}
+              disabled={!isElectron || tunnelLoading || !sshConfig.vpsHost || !sshConfig.privateKey}
               className={btnPrimary}
             >
-              {vpnLoading ? "Connexion..." : "Demarrer le VPN"}
+              {tunnelLoading ? "Connexion..." : "Demarrer le tunnel"}
             </button>
           ) : (
             <button
-              onClick={handleVpnStop}
-              disabled={!isElectron || vpnLoading}
+              onClick={handleTunnelStop}
+              disabled={!isElectron || tunnelLoading}
               className="rounded-lg border border-red-300 bg-white px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
             >
-              {vpnLoading ? "Arret..." : "Arreter le VPN"}
+              {tunnelLoading ? "Arret..." : "Arreter le tunnel"}
             </button>
           )}
         </div>
@@ -780,7 +786,6 @@ export default function SettingsPage() {
         </div>
 
         <div className="space-y-4 p-6">
-          {/* Check button */}
           <div className="flex items-center gap-3">
             <button
               onClick={handleCheckUpdate}
@@ -797,7 +802,6 @@ export default function SettingsPage() {
               )}
             </button>
 
-            {/* Electron packaged: status text */}
             {isPackaged && electronUpdateStatus && !electronUpdateAvailable && !electronUpdateReady && (
               <span className="flex items-center gap-2 text-sm text-green-600">
                 <span className="inline-block h-2 w-2 rounded-full bg-green-500" />
@@ -805,7 +809,6 @@ export default function SettingsPage() {
               </span>
             )}
 
-            {/* Dev / Electron dev: git status */}
             {!isPackaged && updateCheck && !updateCheck.updateAvailable && (
               <span className="flex items-center gap-2 text-sm text-green-600">
                 <span className="inline-block h-2 w-2 rounded-full bg-green-500" />
@@ -820,7 +823,6 @@ export default function SettingsPage() {
             </div>
           )}
 
-          {/* Electron packaged: update available → download */}
           {isPackaged && electronUpdateAvailable && !electronUpdateReady && (
             <div className="rounded-lg border border-blue-200 bg-blue-50 p-4">
               <div className="flex items-center justify-between">
@@ -841,7 +843,6 @@ export default function SettingsPage() {
             </div>
           )}
 
-          {/* Electron packaged: update downloaded → install & restart */}
           {isPackaged && electronUpdateReady && (
             <div className="rounded-lg border border-green-200 bg-green-50 p-4">
               <div className="flex items-center justify-between">
@@ -853,7 +854,6 @@ export default function SettingsPage() {
             </div>
           )}
 
-          {/* Dev / Electron dev: git update available */}
           {!isPackaged && updateCheck?.updateAvailable && (
             <div className="rounded-lg border border-blue-200 bg-blue-50 p-4">
               <div className="flex items-center justify-between">
@@ -883,7 +883,6 @@ export default function SettingsPage() {
             </div>
           )}
 
-          {/* Dev / Electron dev: install logs */}
           {!isPackaged && installing && (
             <div className="flex items-center gap-2 text-sm text-slate-600">
               <div className="h-4 w-4 animate-spin rounded-full border-2 border-slate-600 border-t-transparent" />
