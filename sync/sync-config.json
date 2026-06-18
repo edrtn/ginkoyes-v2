@@ -3,7 +3,7 @@
     "gbkSourcePath": "\\\\SERVEUR\\Backup\\SV.GBK",
     "gbkLocalPath": "C:\\sportlink-serveur\\backup\\SV.GBK",
     "tempFdbPath": "C:\\sportlink-serveur\\backup\\temp_sync.fdb",
-    "gbakPath": "C:\\Program Files\\Firebird\\Firebird_3_0\\gbak.exe",
+    "gbakPath": "C:\\Program Files\\Firebird\\Firebird_5_0\\gbak.exe",
     "user": "SYSDBA",
     "password": "ginkoia"
   },
