@@ -154,11 +154,21 @@ const TABLES: TableDef[] = [
     where: "BRL_BREID IN (SELECT BRE_ID FROM RECBR WHERE BRE_DATE >= '2022-01-01')",
   },
   // Tier 7 : Clients & Atelier (SAV)
-  { name: "CLTCLIENT", columns: ["CLT_ID", "CLT_NOM", "CLT_PRENOM", "CLT_NUMERO", "CLT_TELEPHONE", "CLT_TELPORTABLE", "CLT_EMAIL", "CLT_COMMENT"] },
+  { name: "CLTCLIENT", columns: ["CLT_ID", "CLT_NOM", "CLT_PRENOM", "CLT_NUMERO", "CLT_CIVID", "CLT_NAISSANCE", "CLT_TYPE", "CLT_TELEPHONE", "CLT_TELTRAVAIL_FAX", "CLT_TELPORTABLE", "CLT_EMAIL", "CLT_COMMENT", "CLT_PREMIERPASS", "CLT_DERNIERPASS", "CLT_OPINSMS", "CLT_OPTINEMAIL", "CLT_ARCHIVE"] },
   { name: "SAVMAT", columns: ["MAT_ID", "MAT_CLTID", "MAT_NOM", "MAT_SERIE", "MAT_COULEUR", "MAT_COMMENT", "MAT_DATEACHAT", "MAT_CHRONO", "MAT_NUMMARQUAGE"] },
   { name: "SAVFICHEE", columns: ["SAV_ID", "SAV_CLTID", "SAV_MATID", "SAV_CHRONO", "SAV_DTCREATION", "SAV_DEBUT", "SAV_FIN", "SAV_ETAT", "SAV_IDENT", "SAV_COMMENT", "SAV_DATEPRISEENCHARGE", "SAV_DATEPLANNING", "SAV_DATEREPRISE", "SAV_PLACE", "SAV_KILOMETRAGEVAE", "SAV_NEUF", "SAV_REMMO", "SAV_REMART", "SAV_REM"] },
   { name: "SAVFICHEL", columns: ["SAL_ID", "SAL_SAVID", "SAL_NOM", "SAL_COMMENT", "SAL_DUREE", "SAL_PXBRUT", "SAL_PXTOT", "SAL_REMISE", "SAL_TERMINE", "SAL_DATEDEBUT", "SAL_DATEFIN"] },
   { name: "SAVFICHEART", columns: ["SAA_ID", "SAA_SAVID", "SAA_SALID", "SAA_ARTID", "SAA_QTE", "SAA_PU", "SAA_PXTOT", "SAA_REMISE"] },
+  // Tier 8 : Référentiels & détails atelier
+  { name: "SAVTYPE", columns: ["STY_ID", "STY_NOM"] },
+  { name: "SAVTYPMAT", columns: ["TYM_ID", "TYM_NOM"] },
+  { name: "SAVRAYON", columns: ["SVR_ID", "SVR_NOM", "SVR_ORDRE", "SVR_ENABLED"] },
+  { name: "SAVTAUXH", columns: ["TXH_ID", "TXH_NOM", "TXH_PRIX"] },
+  { name: "SAVFORFAIT", columns: ["FOR_ID", "FOR_NOM", "FOR_PRIX", "FOR_DUREE"] },
+  { name: "SAVFORFAITL", columns: ["FOL_ID", "FOL_ARTID", "FOL_TGFID", "FOL_COUID", "FOL_QTE", "FOL_FORID"] },
+  { name: "SAVMATDETAIL", columns: ["MAD_ID", "MAD_MATID", "MAD_DESIGNATION", "MAD_VALUE", "MAD_COMMENT", "MAD_NUMBER", "MAD_BUYDATE", "MAD_WARRANTLY", "MAD_HS"] },
+  { name: "SAVHISTO", columns: ["SAH_ID", "SAH_SAVID", "SAH_EVENT", "SAH_DATE", "SAH_VALUEBEFORE", "SAH_VALUEAFTER", "SAH_USER"] },
+  { name: "SAVFICHEPC", columns: ["SPC_ID", "SPC_PCEID", "SPC_PCLID", "SPC_SAVID"] },
 ];
 
 // ============================================================
