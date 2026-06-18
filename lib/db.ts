@@ -60,8 +60,8 @@ function startLanProbe() {
         password: config.password,
         database: config.database,
         connectTimeout: 1500,
-        connectionLimit: 1,
         ...POOL_COMMON,
+        connectionLimit: 1,
       });
       const conn = await probePool.getConnection();
       // LAN is back! Switch over
