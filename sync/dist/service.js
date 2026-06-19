@@ -1,6 +1,6 @@
 "use strict";
 /**
- * Ginkoyes V2 — Service Windows (daemon)
+ * SportLink Server — Service Windows (daemon)
  *
  * Tourne en permanence, déclenche la sync quotidienne via node-schedule.
  * Enregistré comme service Windows via node-windows (voir install-service.ts).
@@ -77,8 +77,8 @@ function log(cfg, message) {
 // Main
 // ============================================================
 const cfg = loadConfig();
-const cronExpr = cfg.sync.schedule || "10 23 * * *"; // Default: 23:10 daily
-log(cfg, `Service Ginkoyes démarré`);
+const cronExpr = cfg.sync.schedule || "0 2 * * *"; // Default: 02:00 daily
+log(cfg, `Service SportLink démarré`);
 log(cfg, `Sync planifiée : ${cronExpr}`);
 let syncRunning = false;
 const job = node_schedule_1.default.scheduleJob(cronExpr, async () => {

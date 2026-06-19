@@ -454,6 +454,93 @@ GROUP BY gre_nom
 `;
 
 // ============================
+// Achat — Poids marque par rayon
+// ============================
+
+// Params: marque, marque, fromDate, toDate, fromDate, toDate, marque
+export const ACHAT_POIDS_MARQUE_PAR_RAYON = `
+SELECT
+  v.ray_nom AS RAYON,
+  SUM(CASE WHEN UPPER(v.mrk_nom) = ? THEN v.sum_pxnet ELSE 0 END) AS CA_MARQUE,
+  SUM(v.sum_pxnet) AS CA_TOTAL,
+  SUM(CASE WHEN UPPER(v.mrk_nom) = ? THEN v.sum_qte ELSE 0 END) AS QTE_MARQUE,
+  SUM(v.sum_qte) AS QTE_TOTAL
+FROM _ventes_daily v
+WHERE v.vente_date >= ? AND v.vente_date < ?
+  AND v.ray_nom IN (
+    SELECT DISTINCT ray_nom FROM _ventes_daily
+    WHERE vente_date >= ? AND vente_date < ?
+      AND UPPER(mrk_nom) = ?
+      AND ray_nom IS NOT NULL
+  )
+GROUP BY v.ray_nom
+ORDER BY CA_TOTAL DESC
+`;
+
+// Params: marque, marque, fromDate, toDate, fromDate, toDate, marque
+export const ACHAT_POIDS_MARQUE_PAR_FAMILLE = `
+SELECT
+  r.RAY_NOM AS RAYON,
+  f.FAM_NOM AS FAMILLE,
+  SUM(CASE WHEN UPPER(v.mrk_nom) = ? THEN v.sum_pxnet ELSE 0 END) AS CA_MARQUE,
+  SUM(v.sum_pxnet) AS CA_TOTAL,
+  SUM(CASE WHEN UPPER(v.mrk_nom) = ? THEN v.sum_qte ELSE 0 END) AS QTE_MARQUE,
+  SUM(v.sum_qte) AS QTE_TOTAL
+FROM _ventes_daily v
+JOIN ARTARTICLE a ON a.ART_ID = v.art_id
+JOIN NKLSSFAMILLE sf ON sf.SSF_ID = a.ART_SSFID
+JOIN NKLFAMILLE f ON f.FAM_ID = sf.SSF_FAMID
+JOIN NKLRAYON r ON r.RAY_ID = f.FAM_RAYID
+WHERE v.vente_date >= ? AND v.vente_date < ?
+  AND r.RAY_NOM COLLATE utf8mb4_unicode_ci IN (
+    SELECT DISTINCT v2.ray_nom FROM _ventes_daily v2
+    WHERE v2.vente_date >= ? AND v2.vente_date < ?
+      AND UPPER(v2.mrk_nom) = ?
+      AND v2.ray_nom IS NOT NULL
+  )
+  AND f.FAM_NOM IS NOT NULL
+GROUP BY r.RAY_NOM, f.FAM_NOM
+ORDER BY r.RAY_NOM, CA_TOTAL DESC
+`;
+
+// ============================
+// Achat — Classement marques dans une catégorie
+// ============================
+
+// Params: fromDate, toDate, rayon
+export const ACHAT_CLASSEMENT_MARQUES_RAYON = `
+SELECT
+  UPPER(v.mrk_nom) AS MARQUE,
+  SUM(v.sum_pxnet) AS CA,
+  SUM(v.sum_qte) AS QTE
+FROM _ventes_daily v
+WHERE v.vente_date >= ? AND v.vente_date < ?
+  AND v.ray_nom = ?
+  AND v.mrk_nom IS NOT NULL
+GROUP BY UPPER(v.mrk_nom)
+ORDER BY CA DESC
+`;
+
+// Params: fromDate, toDate, rayon, famille
+export const ACHAT_CLASSEMENT_MARQUES_FAMILLE = `
+SELECT
+  UPPER(v.mrk_nom) AS MARQUE,
+  SUM(v.sum_pxnet) AS CA,
+  SUM(v.sum_qte) AS QTE
+FROM _ventes_daily v
+JOIN ARTARTICLE a ON a.ART_ID = v.art_id
+JOIN NKLSSFAMILLE sf ON sf.SSF_ID = a.ART_SSFID
+JOIN NKLFAMILLE f ON f.FAM_ID = sf.SSF_FAMID
+JOIN NKLRAYON r ON r.RAY_ID = f.FAM_RAYID
+WHERE v.vente_date >= ? AND v.vente_date < ?
+  AND r.RAY_NOM COLLATE utf8mb4_unicode_ci = ?
+  AND f.FAM_NOM COLLATE utf8mb4_unicode_ci = ?
+  AND v.mrk_nom IS NOT NULL
+GROUP BY UPPER(v.mrk_nom)
+ORDER BY CA DESC
+`;
+
+// ============================
 // Achat — Taux de sortie collection N-1
 // ============================
 

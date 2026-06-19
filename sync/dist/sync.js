@@ -1,14 +1,15 @@
 "use strict";
 /**
- * Ginkoyes V2 — Script de synchronisation nightly
+ * SportLink Server — Script de synchronisation nightly
  *
  * Flux :
- * 1. gbak -c pour restaurer SV.GBK → temp_sync.fdb
- * 2. Connexion Firebird au FDB temporaire
- * 3. Pour chaque table : TRUNCATE + INSERT batch dans MariaDB
- * 4. Mise à jour _sync_meta
- * 5. Suppression du FDB temporaire
- * 6. Logging dans fichier
+ * 1. Copie GBK depuis le partage réseau → local
+ * 2. gbak -c pour restaurer SV.GBK → temp_sync.fdb
+ * 3. Connexion Firebird au FDB temporaire
+ * 4. Pour chaque table : TRUNCATE + INSERT batch dans MariaDB
+ * 5. Mise à jour _sync_meta
+ * 6. Suppression du FDB temporaire
+ * 7. Logging dans fichier
  *
  * Usage CLI : npx tsx sync/sync.ts
  * Usage service : import { runSync } from './sync'
@@ -139,12 +140,81 @@ const TABLES = [
         columns: ["BRL_ID", "BRL_BREID", "BRL_ARTID", "BRL_QTE", "BRL_PXACHAT", "BRL_PXVENTE", "BRL_TGFID", "BRL_COUID"],
         where: "BRL_BREID IN (SELECT BRE_ID FROM RECBR WHERE BRE_DATE >= '2022-01-01')",
     },
+    // Tier 7 : Clients & Atelier (SAV)
+    { name: "CLTCLIENT", columns: ["CLT_ID", "CLT_NOM", "CLT_PRENOM", "CLT_NUMERO", "CLT_CIVID", "CLT_NAISSANCE", "CLT_TYPE", "CLT_TELEPHONE", "CLT_TELTRAVAIL_FAX", "CLT_TELPORTABLE", "CLT_EMAIL", "CLT_COMMENT", "CLT_PREMIERPASS", "CLT_DERNIERPASS", "CLT_OPINSMS", "CLT_OPTINEMAIL", "CLT_ARCHIVE"] },
+    { name: "SAVMAT", columns: ["MAT_ID", "MAT_CLTID", "MAT_NOM", "MAT_SERIE", "MAT_COULEUR", "MAT_COMMENT", "MAT_DATEACHAT", "MAT_CHRONO", "MAT_NUMMARQUAGE"] },
+    { name: "SAVFICHEE", columns: ["SAV_ID", "SAV_CLTID", "SAV_MATID", "SAV_CHRONO", "SAV_DTCREATION", "SAV_DEBUT", "SAV_FIN", "SAV_ETAT", "SAV_IDENT", "SAV_COMMENT", "SAV_DATEPRISEENCHARGE", "SAV_DATEPLANNING", "SAV_DATEREPRISE", "SAV_PLACE", "SAV_KILOMETRAGEVAE", "SAV_NEUF", "SAV_REMMO", "SAV_REMART", "SAV_REM"] },
+    { name: "SAVFICHEL", columns: ["SAL_ID", "SAL_SAVID", "SAL_NOM", "SAL_COMMENT", "SAL_DUREE", "SAL_PXBRUT", "SAL_PXTOT", "SAL_REMISE", "SAL_TERMINE", "SAL_DATEDEBUT", "SAL_DATEFIN"] },
+    { name: "SAVFICHEART", columns: ["SAA_ID", "SAA_SAVID", "SAA_SALID", "SAA_ARTID", "SAA_QTE", "SAA_PU", "SAA_PXTOT", "SAA_REMISE"] },
+    // Tier 8 : Référentiels & détails atelier
+    { name: "SAVTYPE", columns: ["STY_ID", "STY_NOM"] },
+    { name: "SAVTYPMAT", columns: ["TYM_ID", "TYM_NOM"] },
+    { name: "SAVRAYON", columns: ["SVR_ID", "SVR_NOM", "SVR_ORDRE", "SVR_ENABLED"] },
+    { name: "SAVTAUXH", columns: ["TXH_ID", "TXH_NOM", "TXH_PRIX"] },
+    { name: "SAVFORFAIT", columns: ["FOR_ID", "FOR_NOM", "FOR_PRIX", "FOR_DUREE"] },
+    { name: "SAVFORFAITL", columns: ["FOL_ID", "FOL_ARTID", "FOL_TGFID", "FOL_COUID", "FOL_QTE", "FOL_FORID"] },
+    { name: "SAVMATDETAIL", columns: ["MAD_ID", "MAD_MATID", "MAD_DESIGNATION", "MAD_VALUE", "MAD_COMMENT", "MAD_NUMBER", "MAD_BUYDATE", "MAD_WARRANTLY", "MAD_HS"] },
+    { name: "SAVHISTO", columns: ["SAH_ID", "SAH_SAVID", "SAH_EVENT", "SAH_DATE", "SAH_VALUEBEFORE", "SAH_VALUEAFTER", "SAH_USER"] },
+    { name: "SAVFICHEPC", columns: ["SPC_ID", "SPC_PCEID", "SPC_PCLID", "SPC_SAVID"] },
 ];
+// ============================================================
+// Config migration helper
+// ============================================================
+function getGbkLocalPath(cfg) {
+    return cfg.firebird.gbkLocalPath || cfg.firebird.gbkPath || "";
+}
+// ============================================================
+// Copy GBK from network share to local
+// ============================================================
+function mountNetworkShare(cfg, log) {
+    if (!cfg.network?.share)
+        return;
+    const { share, user, password } = cfg.network;
+    try {
+        // Disconnect first to avoid "already connected" errors
+        try {
+            (0, child_process_1.execSync)(`net use "${share}" /delete /y`, { stdio: "pipe" });
+        }
+        catch { }
+        const cmd = `net use "${share}" /user:${user} "${password}"`;
+        (0, child_process_1.execSync)(cmd, { stdio: "pipe", timeout: 30000 });
+        log(`Partage réseau connecté : ${share}`);
+    }
+    catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        throw new Error(`Impossible de monter le partage ${share} : ${msg}`);
+    }
+}
+function copyGbk(cfg, log) {
+    const { gbkSourcePath } = cfg.firebird;
+    const gbkLocalPath = getGbkLocalPath(cfg);
+    if (!gbkSourcePath) {
+        log("Pas de gbkSourcePath configuré, utilisation directe du fichier local");
+        return;
+    }
+    // Mount network share if credentials are configured
+    mountNetworkShare(cfg, log);
+    if (!fs.existsSync(gbkSourcePath)) {
+        throw new Error(`Fichier source introuvable : ${gbkSourcePath}`);
+    }
+    // Créer le dossier de destination si nécessaire
+    const destDir = path.dirname(gbkLocalPath);
+    if (!fs.existsSync(destDir)) {
+        fs.mkdirSync(destDir, { recursive: true });
+    }
+    log(`Copie GBK : ${gbkSourcePath} → ${gbkLocalPath}`);
+    const start = Date.now();
+    fs.copyFileSync(gbkSourcePath, gbkLocalPath);
+    const sizeMB = Math.round(fs.statSync(gbkLocalPath).size / 1024 / 1024);
+    const durationSec = Math.round((Date.now() - start) / 1000);
+    log(`Copie terminée : ${sizeMB} Mo en ${durationSec}s`);
+}
 // ============================================================
 // Restore GBK → FDB temp
 // ============================================================
 function restoreGbk(cfg, log) {
-    const { gbakPath, gbkPath, tempFdbPath, user, password } = cfg.firebird;
+    const { gbakPath, tempFdbPath, user, password } = cfg.firebird;
+    const gbkLocalPath = getGbkLocalPath(cfg);
     // Nettoyage du FDB temporaire précédent (peut être verrouillé par Firebird)
     if (fs.existsSync(tempFdbPath)) {
         try {
@@ -169,10 +239,10 @@ function restoreGbk(cfg, log) {
             }
         }
     }
-    log(`Restauration GBK : ${gbkPath} → ${tempFdbPath}`);
+    log(`Restauration GBK : ${gbkLocalPath} → ${tempFdbPath}`);
     // -REP pour écraser un FDB existant (si verrouillé et non supprimable)
     const replaceFlag = fs.existsSync(tempFdbPath) ? "-REP" : "-c";
-    const cmd = `"${gbakPath}" ${replaceFlag} -FIX_FSS_METADATA WIN1252 -FIX_FSS_DATA WIN1252 -page_size 16384 -user ${user} -password ${password} "${gbkPath}" "${tempFdbPath}"`;
+    const cmd = `"${gbakPath}" ${replaceFlag} -FIX_FSS_METADATA WIN1252 -FIX_FSS_DATA WIN1252 -page_size 16384 -user ${user} -password ${password} "${gbkLocalPath}" "${tempFdbPath}"`;
     log(`gbak mode: ${replaceFlag}`);
     try {
         (0, child_process_1.execSync)(cmd, { stdio: "pipe", timeout: 43200000 }); // 12h max
@@ -412,9 +482,11 @@ async function runSync(cfg) {
     const [metaResult] = await pool.execute("INSERT INTO _sync_meta (sync_start, status) VALUES (NOW(), 'running')");
     const syncId = metaResult.insertId;
     try {
-        // Step 1 : Restore GBK
+        // Step 1 : Copy GBK from network share (if configured)
+        copyGbk(cfg, log);
+        // Step 2 : Restore GBK
         restoreGbk(cfg, log);
-        // Step 2 : Sync each table via isql CLI
+        // Step 3 : Sync each table via isql CLI
         let totalRows = 0;
         let tablesSynced = 0;
         for (const table of TABLES) {
