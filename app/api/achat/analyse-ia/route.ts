@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { readFileSync } from "fs";
 import { join } from "path";
+import { query } from "@/lib/db";
 
 function getApiKey(): string {
   try {
@@ -23,7 +24,7 @@ export const maxDuration = 120;
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { marque, fromN1, toN1, fromN2, toN2, comparatif, poidsRayon, recap, tauxSortie } = body;
+    const { marque, fromN1, toN1, fromN2, toN2, comparatif, poidsRayon, recap, tauxSortie, collectionId, collectionNom, targetYear } = body;
 
     if (!marque) {
       return NextResponse.json({ error: "Marque requise" }, { status: 400 });
@@ -97,7 +98,7 @@ export async function POST(request: NextRequest) {
       tauxText = `Taux de sortie global : ${tauxSortie.totaux.tauxSortieMoyen?.toFixed(1)}% (${tauxSortie.totaux.qteVendue} vendus / ${tauxSortie.totaux.qteRecue} reçus)\n`;
       if (tauxSortie.articles?.length) {
         tauxText += `${tauxSortie.articles.length} articles dans la collection.\n`;
-        const sorted = [...tauxSortie.articles].sort((a, b) => b.tauxSortie - a.tauxSortie);
+        const sorted = [...tauxSortie.articles].sort((a: { tauxSortie: number }, b: { tauxSortie: number }) => b.tauxSortie - a.tauxSortie);
         if (sorted.length > 5) {
           tauxText += "Top 5 meilleurs taux de sortie :\n";
           for (const a of sorted.slice(0, 5)) {
@@ -111,6 +112,8 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const today = new Date().toLocaleDateString("fr-FR", { day: "2-digit", month: "long", year: "numeric" });
+
     const systemPrompt = `Tu es un analyste achat senior spécialisé dans le retail sport/outdoor. Tu travailles pour un magasin de sport indépendant multimarque en France.
 
 Tu as accès à un outil de recherche web. UTILISE-LE OBLIGATOIREMENT pour :
@@ -118,7 +121,9 @@ Tu as accès à un outil de recherche web. UTILISE-LE OBLIGATOIREMENT pour :
 2. Identifier les tendances actuelles du marché sport/outdoor en France
 3. Observer la concurrence directe de ${marque} (autres marques sur les mêmes segments)
 
-Sources fiables à privilégier : Sport-Guide.com, FashionNetwork, LSA-conso, SportBusiness, sites officiels des marques, rapports sectoriels.`;
+Sources fiables à privilégier : Sport-Guide.com, FashionNetwork, LSA-conso, SportBusiness, sites officiels des marques, rapports sectoriels.
+
+IMPORTANT : Tu dois produire ta réponse UNIQUEMENT en HTML structuré, PAS en Markdown. Utilise exactement le template HTML fourni dans la consigne utilisateur.`;
 
     const userPrompt = `Voici les données internes d'analyse pour la marque **${marque}** sur la période ${fromN1} → ${toN1} vs N-1 (${fromN2} → ${toN2}) :
 
@@ -136,16 +141,64 @@ ${tauxText}
 
 ---
 
-Commence par faire des recherches web sur l'actualité de ${marque} et de ses concurrents directs, puis produis une analyse structurée :
+Commence par faire des recherches web sur l'actualité de ${marque} et de ses concurrents directs, puis produis un rapport d'analyse au format HTML structuré.
 
-1. **Synthèse des performances** — CA, marge, évolution, performance globale
-2. **Contexte marché & actualité ${marque}** — actualités récentes de la marque, tendances du secteur, positionnement stratégique (basé sur tes recherches web)
-3. **Analyse concurrentielle** — comparaison avec les marques concurrentes sur les mêmes segments, parts de marché relatives
-4. **Positionnement en magasin** — poids dans chaque catégorie, évolution, rayons forts/faibles
-5. **Points forts & points de vigilance**
-6. **Recommandations achat** — pour la prochaine saison, en tenant compte de l'actualité marché et de la concurrence
+Utilise EXACTEMENT cette structure HTML (pas de Markdown, uniquement du HTML) :
 
-Sois factuel, utilise les chiffres internes ET les informations marché. Cite tes sources quand tu utilises des infos web. Écris en français.`;
+<div class="rapport-ia">
+  <div class="rapport-header">
+    <h1>RAPPORT D'ANALYSE ACHAT</h1>
+    <div class="rapport-meta">
+      <span>Marque : ${marque}</span>
+      <span>Période : ${fromN1} → ${toN1} vs ${fromN2} → ${toN2}</span>
+      <span>Généré le : ${today}</span>
+    </div>
+  </div>
+
+  <div class="rapport-section">
+    <h2>1. Synthèse des performances</h2>
+    <!-- Tableau HTML des chiffres clés (CA, marge, évolution, coefficient) + commentaire analytique -->
+  </div>
+
+  <div class="rapport-section">
+    <h2>2. Contexte marché & actualité ${marque}</h2>
+    <!-- Actualités récentes de la marque, tendances du secteur, positionnement stratégique (basé sur tes recherches web) -->
+  </div>
+
+  <div class="rapport-section">
+    <h2>3. Analyse concurrentielle</h2>
+    <!-- Concurrents directs, positionnement, comparaison -->
+  </div>
+
+  <div class="rapport-section">
+    <h2>4. Positionnement en magasin</h2>
+    <!-- Poids par rayon/famille, évolution, rayons forts/faibles. Utilise un tableau HTML -->
+  </div>
+
+  <div class="rapport-section">
+    <h2>5. Points forts & points de vigilance</h2>
+    <!-- Deux listes : points forts (ul) et points de vigilance (ul) -->
+  </div>
+
+  <div class="rapport-section">
+    <h2>6. Recommandations achat</h2>
+    <!-- Recommandations actionnables pour la prochaine saison, en tenant compte de l'actualité marché et de la concurrence -->
+  </div>
+
+  <div class="rapport-footer">
+    <p>Sources : liste des sources web utilisées</p>
+  </div>
+</div>
+
+RÈGLES :
+- Utilise des <table> HTML pour les données chiffrées (avec <thead> et <tbody>)
+- Utilise des <ul><li> pour les listes
+- Utilise des <strong> et <em> pour la mise en forme
+- NE PAS utiliser de Markdown (pas de ** ou ## etc.)
+- Le HTML doit commencer par <div class="rapport-ia"> et finir par </div>
+- Sois factuel, utilise les chiffres internes ET les informations marché
+- Cite tes sources quand tu utilises des infos web
+- Écris en français`;
 
     const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
@@ -204,7 +257,33 @@ Sois factuel, utilise les chiffres internes ET les informations marché. Cite te
       );
     }
 
-    return NextResponse.json({ analyse });
+    // Save to database
+    let rapportId: number | null = null;
+    try {
+      const insertResult = await query<{ insertId: number }>(
+        `INSERT INTO _rapports_ia (marque, collection_id, collection_nom, target_year, from_n1, to_n1, from_n2, to_n2, contenu)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          marque,
+          collectionId ? parseInt(collectionId) : null,
+          collectionNom || null,
+          targetYear ? parseInt(targetYear) : new Date().getFullYear(),
+          fromN1,
+          toN1,
+          fromN2,
+          toN2,
+          analyse,
+        ]
+      );
+      // mysql2 execute returns ResultSetHeader with insertId
+      const resultSet = insertResult as unknown as { insertId: number };
+      rapportId = resultSet.insertId;
+    } catch (dbErr) {
+      console.error("Error saving rapport to DB:", dbErr);
+      // Don't fail the request if DB save fails — still return the analysis
+    }
+
+    return NextResponse.json({ id: rapportId, analyse });
   } catch (error) {
     console.error("Error in analyse-ia:", error);
     const msg = error instanceof Error ? error.message : "Erreur inconnue";

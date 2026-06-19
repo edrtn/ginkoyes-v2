@@ -117,6 +117,14 @@ interface ClassementItem {
   part: number;
 }
 
+interface RapportIA {
+  id: number;
+  marque: string;
+  collection_nom: string | null;
+  target_year: number;
+  created_at: string;
+}
+
 type SourceFilter = "TOUT" | "CAISSE" | "BL/INTERNET";
 
 // ── Helpers ────────────────────────────────────────────
@@ -261,6 +269,10 @@ export default function AchatPage() {
   const [loadingAnalyse, setLoadingAnalyse] = useState(false);
   const [showAnalyse, setShowAnalyse] = useState(false);
 
+  // Historique rapports IA
+  const [rapportsIA, setRapportsIA] = useState<RapportIA[]>([]);
+  const [loadingRapports, setLoadingRapports] = useState(false);
+
   // UI
   const [loadingFilters, setLoadingFilters] = useState(true);
   const [loadingData, setLoadingData] = useState(false);
@@ -309,7 +321,16 @@ export default function AchatPage() {
     return () => document.removeEventListener("mousedown", handleClick);
   }, []);
 
-  // Charger collections + marques
+  // Charger collections + marques + rapports IA
+  const fetchRapportsIA = useCallback(() => {
+    setLoadingRapports(true);
+    fetch("/api/achat/rapports-ia")
+      .then((r) => r.json())
+      .then((data) => setRapportsIA(data.rapports || []))
+      .catch(console.error)
+      .finally(() => setLoadingRapports(false));
+  }, []);
+
   useEffect(() => {
     Promise.all([
       fetch("/api/achat/collections").then((r) => r.json()),
@@ -321,6 +342,7 @@ export default function AchatPage() {
       })
       .catch(console.error)
       .finally(() => setLoadingFilters(false));
+    fetchRapportsIA();
   }, []);
 
   // Années cibles disponibles
@@ -460,8 +482,9 @@ export default function AchatPage() {
     if (!selectedMarque || !comparatif) return;
     setLoadingAnalyse(true);
     setAnalyseIA("");
-    setShowAnalyse(true);
     try {
+      // Find collection name from selectedCollection
+      const col = collections.find((c) => String(c.COL_ID) === selectedCollection);
       const res = await fetch("/api/achat/analyse-ia", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -469,6 +492,9 @@ export default function AchatPage() {
           marque: selectedMarque,
           fromN1, toN1, fromN2, toN2,
           comparatif, poidsRayon, recap, tauxSortie,
+          collectionId: selectedCollection,
+          collectionNom: col?.COL_NOM || null,
+          targetYear,
         }),
       });
       const data = await res.json();
@@ -477,13 +503,42 @@ export default function AchatPage() {
         return;
       }
       setAnalyseIA(data.analyse);
+      // Refresh history
+      fetchRapportsIA();
     } catch (error) {
       console.error("Erreur analyse IA:", error);
       setAnalyseIA("Erreur lors de l'analyse. Veuillez réessayer.");
     } finally {
       setLoadingAnalyse(false);
     }
-  }, [selectedMarque, fromN1, toN1, fromN2, toN2, comparatif, poidsRayon, recap, tauxSortie]);
+  }, [selectedMarque, fromN1, toN1, fromN2, toN2, comparatif, poidsRayon, recap, tauxSortie, selectedCollection, collections, targetYear, fetchRapportsIA]);
+
+  const ouvrirRapport = useCallback(async (id: number) => {
+    try {
+      const res = await fetch(`/api/achat/rapports-ia?id=${id}`);
+      const data = await res.json();
+      if (!res.ok) return;
+      const r = data.rapport;
+      // Restore wizard state from rapport metadata
+      setSelectedMarque(r.marque);
+      setMarqueSearch(r.marque);
+      setTargetYear(String(r.target_year));
+      if (r.collection_id) setSelectedCollection(String(r.collection_id));
+      // Parse dates to restore period (from_n1 = "YYYY-MM-DD")
+      const fn1 = new Date(r.from_n1);
+      const tn1 = new Date(r.to_n1);
+      setPeriodFromDay(fn1.getDate());
+      setPeriodFromMonth(fn1.getMonth() + 1);
+      setPeriodToDay(tn1.getDate());
+      setPeriodToMonth(tn1.getMonth() + 1);
+      // Pre-load the IA analysis content
+      setAnalyseIA(r.contenu);
+      // Go to step 4 — data will auto-load via the useEffect
+      setStep(4);
+    } catch (error) {
+      console.error("Erreur chargement rapport:", error);
+    }
+  }, []);
 
   useEffect(() => {
     if (step === 4) {
@@ -732,6 +787,52 @@ export default function AchatPage() {
                 Continuer
               </button>
             </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ── Historique rapports IA ── */}
+      {step === 1 && rapportsIA.length > 0 && (
+        <Card className="mt-4 border-0 shadow-sm">
+          <CardContent className="py-5 px-6">
+            <div className="flex items-center gap-2 mb-3">
+              <svg className="h-4 w-4 text-violet-500" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
+              </svg>
+              <h3 className="text-sm font-semibold text-gray-700">Derniers rapports achats</h3>
+            </div>
+            {loadingRapports ? (
+              <div className="flex items-center justify-center py-4">
+                <div className="h-5 w-5 animate-spin rounded-full border-2 border-violet-200 border-t-violet-500" />
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                {rapportsIA.slice(0, 10).map((r) => (
+                  <div
+                    key={r.id}
+                    className="flex items-center justify-between rounded-lg border border-gray-100 px-3 py-2 hover:bg-gray-50 transition-colors"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">
+                        {r.marque}
+                      </span>
+                      {r.collection_nom && (
+                        <span className="truncate text-xs text-gray-500">{r.collection_nom}</span>
+                      )}
+                      <span className="shrink-0 text-xs text-gray-400">
+                        {new Date(r.created_at).toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => ouvrirRapport(r.id)}
+                      className="shrink-0 ml-2 rounded-md bg-violet-50 px-3 py-1 text-xs font-medium text-violet-600 hover:bg-violet-100 transition-colors"
+                    >
+                      Voir
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
@@ -991,23 +1092,73 @@ export default function AchatPage() {
             <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-600">
               {periodLabel2}
             </span>
-            {recap && comparatif && (
+            {recap && comparatif && !analyseIA && !loadingAnalyse && (
               <button
                 onClick={lancerAnalyseIA}
-                disabled={loadingAnalyse}
-                className="ml-auto flex items-center gap-2 rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white shadow-md shadow-violet-200 transition-all hover:bg-violet-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="ml-auto flex items-center gap-2 rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white shadow-md shadow-violet-200 transition-all hover:bg-violet-700"
               >
-                {loadingAnalyse ? (
-                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-                ) : (
-                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 00-2.455 2.456z" />
-                  </svg>
-                )}
-                Analyse IA
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 00-2.455 2.456z" />
+                </svg>
+                Générer analyse IA
+              </button>
+            )}
+            {recap && comparatif && loadingAnalyse && (
+              <div className="ml-auto flex items-center gap-2 rounded-lg bg-violet-100 px-4 py-2 text-sm font-semibold text-violet-600">
+                <div className="h-4 w-4 animate-spin rounded-full border-2 border-violet-300 border-t-violet-600" />
+                Analyse en cours...
+              </div>
+            )}
+            {recap && comparatif && analyseIA && !loadingAnalyse && (
+              <button
+                onClick={() => setShowAnalyse(true)}
+                className="ml-auto flex items-center gap-2 rounded-lg bg-violet-100 px-4 py-2 text-sm font-semibold text-violet-700 transition-all hover:bg-violet-200"
+              >
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+                Voir l&apos;analyse IA
               </button>
             )}
           </div>
+
+          {/* ── Historique rapports IA pour cette marque ── */}
+          {rapportsIA.filter((r) => r.marque === selectedMarque).length > 0 && (
+            <Card className="border-0 shadow-sm">
+              <CardContent className="py-4 px-5">
+                <div className="flex items-center gap-2 mb-2">
+                  <svg className="h-4 w-4 text-violet-500" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
+                  </svg>
+                  <h3 className="text-sm font-semibold text-gray-700">Rapports IA — {selectedMarque}</h3>
+                </div>
+                <div className="space-y-1">
+                  {rapportsIA.filter((r) => r.marque === selectedMarque).slice(0, 5).map((r) => (
+                    <div
+                      key={r.id}
+                      className="flex items-center justify-between rounded-lg border border-gray-100 px-3 py-1.5 hover:bg-gray-50 transition-colors"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        {r.collection_nom && (
+                          <span className="truncate text-xs text-gray-500">{r.collection_nom}</span>
+                        )}
+                        <span className="shrink-0 text-xs text-gray-400">
+                          {new Date(r.created_at).toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => ouvrirRapport(r.id)}
+                        className="shrink-0 ml-2 rounded-md bg-violet-50 px-3 py-1 text-xs font-medium text-violet-600 hover:bg-violet-100 transition-colors"
+                      >
+                        Voir
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {loadingData ? (
             <div className="flex items-center justify-center py-16">
@@ -1645,7 +1796,7 @@ export default function AchatPage() {
       {/* ── Modal Analyse IA ── */}
       {showAnalyse && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-          <div className="relative mx-4 flex max-h-[90vh] w-full max-w-3xl flex-col rounded-2xl bg-white shadow-2xl">
+          <div className="relative mx-4 flex max-h-[90vh] w-full max-w-4xl flex-col rounded-2xl bg-white shadow-2xl">
             {/* Header */}
             <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
               <div className="flex items-center gap-3">
@@ -1655,8 +1806,8 @@ export default function AchatPage() {
                   </svg>
                 </div>
                 <div>
-                  <h3 className="text-lg font-semibold text-gray-900">Analyse IA — {selectedMarque}</h3>
-                  <p className="text-xs text-gray-500">{periodLabel1} vs {periodLabel2}</p>
+                  <h3 className="text-lg font-semibold text-gray-900">Rapport d&apos;analyse IA</h3>
+                  <p className="text-xs text-gray-500">{selectedMarque ? `${selectedMarque} — ` : ""}{periodLabel1 ? `${periodLabel1} vs ${periodLabel2}` : "Rapport sauvegardé"}</p>
                 </div>
               </div>
               <button
@@ -1674,15 +1825,13 @@ export default function AchatPage() {
                 <div className="flex items-center justify-center py-12">
                   <div className="space-y-3 text-center">
                     <div className="mx-auto h-8 w-8 animate-spin rounded-full border-4 border-violet-200 border-t-violet-500" />
-                    <p className="text-sm text-gray-500">Recherche d'actualités et analyse en cours...</p>
+                    <p className="text-sm text-gray-500">Recherche d&apos;actualités et analyse en cours...</p>
                     <p className="text-xs text-gray-400">Cela peut prendre 30 à 60 secondes</p>
                   </div>
                 </div>
               )}
               {!loadingAnalyse && analyseIA && (
-                <div className="prose prose-sm max-w-none text-gray-700" style={{ whiteSpace: "pre-line" }}>
-                  {analyseIA}
-                </div>
+                <div className="rapport-ia-container" dangerouslySetInnerHTML={{ __html: analyseIA }} />
               )}
             </div>
             {/* Footer */}
@@ -1697,6 +1846,101 @@ export default function AchatPage() {
           </div>
         </div>
       )}
+
+      {/* ── Styles rapport IA ── */}
+      <style jsx global>{`
+        .rapport-ia-container .rapport-ia {
+          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+          color: #1f2937;
+          line-height: 1.6;
+        }
+        .rapport-ia-container .rapport-header {
+          border-bottom: 2px solid #7c3aed;
+          padding-bottom: 1rem;
+          margin-bottom: 1.5rem;
+        }
+        .rapport-ia-container .rapport-header h1 {
+          font-size: 1.25rem;
+          font-weight: 700;
+          color: #7c3aed;
+          letter-spacing: 0.05em;
+          margin: 0 0 0.75rem 0;
+        }
+        .rapport-ia-container .rapport-meta {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 1rem;
+        }
+        .rapport-ia-container .rapport-meta span {
+          font-size: 0.8rem;
+          color: #6b7280;
+          background: #f3f4f6;
+          padding: 0.25rem 0.75rem;
+          border-radius: 9999px;
+        }
+        .rapport-ia-container .rapport-section {
+          margin-bottom: 1.75rem;
+        }
+        .rapport-ia-container .rapport-section h2 {
+          font-size: 1rem;
+          font-weight: 600;
+          color: #1f2937;
+          border-left: 3px solid #7c3aed;
+          padding-left: 0.75rem;
+          margin: 0 0 0.75rem 0;
+        }
+        .rapport-ia-container .rapport-section p {
+          font-size: 0.875rem;
+          margin: 0.5rem 0;
+        }
+        .rapport-ia-container .rapport-section table {
+          width: 100%;
+          border-collapse: collapse;
+          font-size: 0.8rem;
+          margin: 0.75rem 0;
+        }
+        .rapport-ia-container .rapport-section thead th {
+          background: #f9fafb;
+          border: 1px solid #e5e7eb;
+          padding: 0.5rem 0.75rem;
+          text-align: left;
+          font-weight: 600;
+          color: #374151;
+        }
+        .rapport-ia-container .rapport-section tbody td {
+          border: 1px solid #e5e7eb;
+          padding: 0.4rem 0.75rem;
+          color: #4b5563;
+        }
+        .rapport-ia-container .rapport-section tbody tr:nth-child(even) {
+          background: #f9fafb;
+        }
+        .rapport-ia-container .rapport-section tbody tr:hover {
+          background: #f3f4f6;
+        }
+        .rapport-ia-container .rapport-section ul {
+          margin: 0.5rem 0;
+          padding-left: 1.25rem;
+        }
+        .rapport-ia-container .rapport-section li {
+          font-size: 0.875rem;
+          margin-bottom: 0.35rem;
+          color: #374151;
+        }
+        .rapport-ia-container .rapport-section strong {
+          color: #1f2937;
+        }
+        .rapport-ia-container .rapport-footer {
+          border-top: 1px solid #e5e7eb;
+          padding-top: 0.75rem;
+          margin-top: 1rem;
+        }
+        .rapport-ia-container .rapport-footer p {
+          font-size: 0.75rem;
+          color: #9ca3af;
+          font-style: italic;
+        }
+      `}</style>
 
       {/* ── Modal classement marques ── */}
       {classementModal && (
