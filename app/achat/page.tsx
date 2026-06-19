@@ -1582,7 +1582,7 @@ export default function AchatPage() {
                       Poids de {selectedMarque} par rayon
                     </h2>
                     <p className="mb-3 text-xs text-gray-400">
-                      Part de marché dans les catégories où {selectedMarque} est présent
+                      Part de marché dans les catégories où {selectedMarque} est présent — Toutes collections confondues, {periodLabel1}
                     </p>
 
                     {rayons.map((r) => {

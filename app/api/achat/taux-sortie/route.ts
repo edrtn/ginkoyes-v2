@@ -36,8 +36,9 @@ export async function GET(request: NextRequest) {
     const cacheKey = `achat-taux:${colId}:${m}`;
 
     const result = await cached(cacheKey, async () => {
-      // Params: collectionId, marque
+      // Params: collectionId, collectionId, marque
       const rows = await query<TauxSortieRow>(ACHAT_TAUX_SORTIE, [
+        colId,
         colId,
         m,
       ]);
