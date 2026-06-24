@@ -158,22 +158,31 @@ function registerIpcHandlers(): void {
     }
   });
 
-  // 2. get-vpn-config
-  ipcMain.handle('get-vpn-config', async () => {
+  // 2. get-tunnel-config
+  ipcMain.handle('get-tunnel-config', async () => {
     try {
-      const rows = await dbQuery<any[]>('SELECT * FROM _vpn_config WHERE id = 1');
+      const rows = await dbQuery<any[]>(
+        'SELECT vps_host, vps_port, ssh_user, private_key, remote_port FROM _vpn_config WHERE id = 1'
+      );
       return rows[0] || null;
     } catch (err: any) {
       return { error: err.message };
     }
   });
 
-  // 3. set-vpn-key
-  ipcMain.handle('set-vpn-key', async (_event, authKey: string) => {
+  // 3. set-tunnel-config
+  ipcMain.handle('set-tunnel-config', async (_event, config: { vps_host: string; vps_port: number; ssh_user: string; private_key: string; remote_port: number }) => {
     try {
       await dbQuery(
-        'UPDATE _vpn_config SET auth_key = ? WHERE id = 1',
-        [authKey]
+        `INSERT INTO _vpn_config (id, vps_host, vps_port, ssh_user, private_key, remote_port)
+         VALUES (1, ?, ?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE
+           vps_host = VALUES(vps_host),
+           vps_port = VALUES(vps_port),
+           ssh_user = VALUES(ssh_user),
+           private_key = VALUES(private_key),
+           remote_port = VALUES(remote_port)`,
+        [config.vps_host, config.vps_port, config.ssh_user, config.private_key, config.remote_port]
       );
       return { success: true };
     } catch (err: any) {
@@ -329,56 +338,6 @@ function registerIpcHandlers(): void {
     }
   });
 
-  // 7. tailscale-status
-  ipcMain.handle('tailscale-status', async () => {
-    return new Promise((resolve) => {
-      execFile('tailscale', ['status', '--json'], (err, stdout) => {
-        if (err) {
-          resolve({ connected: false, error: err.message });
-          return;
-        }
-        try {
-          const data = JSON.parse(stdout);
-          resolve({
-            connected: data.BackendState === 'Running',
-            ip: data.TailscaleIPs?.[0] || null,
-            hostname: data.Self?.HostName || null,
-            raw: data,
-          });
-        } catch {
-          resolve({ connected: false, error: 'Impossible de parser la reponse Tailscale' });
-        }
-      });
-    });
-  });
-
-  // 8. tailscale-up
-  ipcMain.handle('tailscale-up', async (_event, authKey: string) => {
-    return new Promise((resolve) => {
-      const args = ['up'];
-      if (authKey) args.push(`--auth-key=${authKey}`);
-      execFile('tailscale', args, (err, stdout, stderr) => {
-        if (err) {
-          resolve({ success: false, error: stderr || err.message });
-          return;
-        }
-        resolve({ success: true, output: stdout });
-      });
-    });
-  });
-
-  // 9. tailscale-down
-  ipcMain.handle('tailscale-down', async () => {
-    return new Promise((resolve) => {
-      execFile('tailscale', ['down'], (err, stdout, stderr) => {
-        if (err) {
-          resolve({ success: false, error: stderr || err.message });
-          return;
-        }
-        resolve({ success: true, output: stdout });
-      });
-    });
-  });
 }
 
 // --- App lifecycle ---

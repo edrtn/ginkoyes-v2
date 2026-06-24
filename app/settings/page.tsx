@@ -115,6 +115,11 @@ export default function SettingsPage() {
   const [electronDownloadProgress, setElectronDownloadProgress] = useState<number | null>(null);
   const [electronUpdateReady, setElectronUpdateReady] = useState(false);
 
+  // --- Connection mode (for "pull from server" button) ---
+  const [connectionMode, setConnectionMode] = useState<string>("unknown");
+  const [pullingFromServer, setPullingFromServer] = useState(false);
+  const [pullResult, setPullResult] = useState<{ success: boolean; message: string } | null>(null);
+
   // Dev update state
   const [updateCheck, setUpdateCheck] = useState<{ updateAvailable: boolean; currentCommit: string; remoteCommit: string; behindCount: number } | null>(null);
   const [installing, setInstalling] = useState(false);
@@ -138,6 +143,12 @@ export default function SettingsPage() {
     if (api.isPackaged) {
       api.isPackaged().then((v: boolean) => setIsPackaged(v));
     }
+
+    // Fetch connection mode to know if we're on LAN
+    fetch("/api/connection-mode")
+      .then((r) => r.json())
+      .then((d) => setConnectionMode(d.mode || "unknown"))
+      .catch(() => {});
   }, []);
 
   // --- Poll tunnel status while connecting ---
@@ -286,6 +297,37 @@ export default function SettingsPage() {
       await refreshTunnelStatus();
     } finally {
       setTunnelLoading(false);
+    }
+  }
+
+  async function handlePullFromServer() {
+    const api = getApi();
+    if (!api) return;
+    setPullingFromServer(true);
+    setPullResult(null);
+    try {
+      const res = await fetch("/api/tunnel-config");
+      const data = await res.json();
+      if (data && data.vpsHost) {
+        const newCfg: SshConfig = {
+          vpsHost: data.vpsHost,
+          vpsPort: data.vpsPort ?? 22,
+          sshUser: data.sshUser ?? "tunnel",
+          privateKey: data.privateKey ?? "",
+          remotePort: data.remotePort ?? 3307,
+          enabled: sshConfig.enabled,
+        };
+        setSshConfig(newCfg);
+        await api.setSshConfig(newCfg);
+        setPullResult({ success: true, message: "Configuration SSH recuperee du serveur" });
+      } else {
+        setPullResult({ success: false, message: "Aucune configuration SSH trouvee en base" });
+      }
+    } catch (err) {
+      setPullResult({ success: false, message: String(err) });
+    } finally {
+      setPullingFromServer(false);
+      setTimeout(() => setPullResult(null), 5000);
     }
   }
 
@@ -750,8 +792,24 @@ export default function SettingsPage() {
             Sauvegarder SSH
           </button>
 
+          {isElectron && connectionMode === "local" && (
+            <button
+              onClick={handlePullFromServer}
+              disabled={pullingFromServer}
+              className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            >
+              {pullingFromServer ? "Recuperation..." : "Recuperer du serveur"}
+            </button>
+          )}
+
           {sshSaved && (
             <span className="text-sm text-green-600">Sauvegarde</span>
+          )}
+
+          {pullResult && (
+            <span className={`text-sm ${pullResult.success ? "text-green-600" : "text-red-600"}`}>
+              {pullResult.message}
+            </span>
           )}
 
           {tunnelStatus?.state !== "connected" ? (

@@ -6,12 +6,10 @@ contextBridge.exposeInMainWorld('api', {
   triggerSync: () => ipcRenderer.invoke('trigger-sync'),
   getSyncLog: () => ipcRenderer.invoke('get-sync-log'),
 
-  // VPN
-  getVpnConfig: () => ipcRenderer.invoke('get-vpn-config'),
-  setVpnKey: (key: string) => ipcRenderer.invoke('set-vpn-key', key),
-  tailscaleStatus: () => ipcRenderer.invoke('tailscale-status'),
-  tailscaleUp: (authKey: string) => ipcRenderer.invoke('tailscale-up', authKey),
-  tailscaleDown: () => ipcRenderer.invoke('tailscale-down'),
+  // Tunnel SSH
+  getTunnelConfig: () => ipcRenderer.invoke('get-tunnel-config'),
+  setTunnelConfig: (config: { vps_host: string; vps_port: number; ssh_user: string; private_key: string; remote_port: number }) =>
+    ipcRenderer.invoke('set-tunnel-config', config),
 
   // Service
   getServiceStatus: () => ipcRenderer.invoke('get-service-status'),

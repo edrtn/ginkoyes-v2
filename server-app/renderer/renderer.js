@@ -11,10 +11,6 @@ if (!gkApi) {
 // --- DOM elements ---
 const elServiceStatus = document.getElementById('service-status');
 const elNextSync = document.getElementById('next-sync');
-const elVpnStatus = document.getElementById('vpn-status');
-const elVpnIp = document.getElementById('vpn-ip');
-const elVpnKeyInput = document.getElementById('vpn-key-input');
-const elBtnSaveKey = document.getElementById('btn-save-key');
 const elSyncDate = document.getElementById('sync-date');
 const elSyncDuration = document.getElementById('sync-duration');
 const elSyncRows = document.getElementById('sync-rows');
@@ -23,6 +19,15 @@ const elBtnSync = document.getElementById('btn-sync');
 const elBtnRefresh = document.getElementById('btn-refresh');
 const elLogOutput = document.getElementById('log-output');
 const elHistoryBody = document.querySelector('#sync-history tbody');
+
+// Tunnel SSH
+const elTunnelVpsHost = document.getElementById('tunnel-vps-host');
+const elTunnelVpsPort = document.getElementById('tunnel-vps-port');
+const elTunnelSshUser = document.getElementById('tunnel-ssh-user');
+const elTunnelRemotePort = document.getElementById('tunnel-remote-port');
+const elTunnelPrivateKey = document.getElementById('tunnel-private-key');
+const elBtnSaveTunnel = document.getElementById('btn-save-tunnel');
+const elTunnelSaveStatus = document.getElementById('tunnel-save-status');
 
 let isSyncing = false;
 
@@ -139,31 +144,6 @@ async function loadServiceStatus() {
   elNextSync.textContent = '02:00';
 }
 
-async function loadVpnStatus() {
-  let status;
-  try {
-    status = await gkApi.tailscaleStatus();
-  } catch (err) {
-    elLogOutput.textContent += `[ERR] tailscaleStatus: ${err.message}\n`;
-    return;
-  }
-  if (status.connected) {
-    elVpnStatus.className = 'badge badge-success';
-    elVpnStatus.textContent = 'Connecte';
-    elVpnIp.textContent = status.ip || '--';
-  } else {
-    elVpnStatus.className = 'badge badge-error';
-    elVpnStatus.textContent = 'Deconnecte';
-    elVpnIp.textContent = '--';
-  }
-
-  // Charger la cle depuis la DB
-  const vpnConfig = await gkApi.getVpnConfig();
-  if (vpnConfig && !vpnConfig.error && vpnConfig.auth_key) {
-    elVpnKeyInput.value = vpnConfig.auth_key;
-  }
-}
-
 async function loadSyncLog() {
   const result = await gkApi.getSyncLog();
   if (result.lines && result.lines.length > 0) {
@@ -176,12 +156,27 @@ async function loadSyncLog() {
   }
 }
 
+async function loadTunnelConfig() {
+  try {
+    const config = await gkApi.getTunnelConfig();
+    if (config && !config.error) {
+      elTunnelVpsHost.value = config.vps_host || '';
+      elTunnelVpsPort.value = config.vps_port || 22;
+      elTunnelSshUser.value = config.ssh_user || 'tunnel';
+      elTunnelRemotePort.value = config.remote_port || 3307;
+      elTunnelPrivateKey.value = config.private_key || '';
+    }
+  } catch (err) {
+    elLogOutput.textContent += `[ERR] getTunnelConfig: ${err.message}\n`;
+  }
+}
+
 async function refreshAll() {
   await Promise.allSettled([
     loadSyncStatus(),
     loadServiceStatus(),
-    loadVpnStatus(),
     loadSyncLog(),
+    loadTunnelConfig(),
   ]);
 }
 
@@ -204,27 +199,24 @@ elBtnSync.addEventListener('click', async () => {
   }
 });
 
-elBtnSaveKey.addEventListener('click', async () => {
-  const key = elVpnKeyInput.value.trim();
-  if (!key) return;
-
-  elBtnSaveKey.disabled = true;
-  elBtnSaveKey.textContent = 'Enregistrement...';
-
-  const result = await gkApi.setVpnKey(key);
-  if (result.error) {
-    alert(`Erreur : ${result.error}`);
-  } else {
-    elBtnSaveKey.textContent = 'Enregistre !';
-    setTimeout(() => {
-      elBtnSaveKey.textContent = 'Enregistrer';
-    }, 2000);
-  }
-
-  elBtnSaveKey.disabled = false;
-});
-
 elBtnRefresh.addEventListener('click', refreshAll);
+
+elBtnSaveTunnel.addEventListener('click', async () => {
+  const config = {
+    vps_host: elTunnelVpsHost.value,
+    vps_port: parseInt(elTunnelVpsPort.value, 10) || 22,
+    ssh_user: elTunnelSshUser.value,
+    private_key: elTunnelPrivateKey.value,
+    remote_port: parseInt(elTunnelRemotePort.value, 10) || 3307,
+  };
+  const result = await gkApi.setTunnelConfig(config);
+  if (result.error) {
+    elLogOutput.textContent += `[ERR] setTunnelConfig: ${result.error}\n`;
+  } else {
+    elTunnelSaveStatus.style.display = 'inline';
+    setTimeout(() => { elTunnelSaveStatus.style.display = 'none'; }, 3000);
+  }
+});
 
 // --- Sync streaming events ---
 

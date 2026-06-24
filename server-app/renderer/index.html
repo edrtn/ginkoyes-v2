@@ -27,23 +27,33 @@
         </div>
       </div>
 
-      <!-- Card VPN -->
+      <!-- Card Tunnel SSH -->
       <div class="card">
-        <h2>VPN Tailscale</h2>
+        <h2>Tunnel SSH</h2>
         <div class="field">
-          <span class="label">Etat :</span>
-          <span id="vpn-status" class="badge badge-unknown">--</span>
+          <label for="tunnel-vps-host">VPS Host</label>
+          <input type="text" id="tunnel-vps-host" placeholder="85.215.176.58">
         </div>
         <div class="field">
-          <span class="label">IP :</span>
-          <span id="vpn-ip">--</span>
+          <label for="tunnel-vps-port">Port SSH</label>
+          <input type="number" id="tunnel-vps-port" value="22">
         </div>
         <div class="field">
-          <span class="label">Cle :</span>
-          <input type="text" id="vpn-key-input" placeholder="tskey-auth-..." />
+          <label for="tunnel-ssh-user">Utilisateur SSH</label>
+          <input type="text" id="tunnel-ssh-user" placeholder="tunnel">
         </div>
-        <button id="btn-save-key">Enregistrer</button>
+        <div class="field">
+          <label for="tunnel-remote-port">Port distant</label>
+          <input type="number" id="tunnel-remote-port" value="3307">
+        </div>
+        <div class="field">
+          <label for="tunnel-private-key">Cle privee</label>
+          <textarea id="tunnel-private-key" rows="4" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"></textarea>
+        </div>
+        <button id="btn-save-tunnel">Enregistrer</button>
+        <span id="tunnel-save-status" style="display:none; margin-left:8px; color:green; font-size:0.85em;">Sauvegarde !</span>
       </div>
+
     </div>
 
     <div class="row">

@@ -133,6 +133,26 @@ export default function ConnectionSetup({
       const dbConfig = await api.getDbConfig();
       await api.setDbConfig({ ...dbConfig, lanHost: activeIp });
 
+      // Auto-pull SSH tunnel config from server DB
+      try {
+        const res = await fetch("/api/tunnel-config");
+        const tunnelData = await res.json();
+        if (tunnelData && tunnelData.vpsHost && api.setSshConfig) {
+          await api.setSshConfig({
+            vpsHost: tunnelData.vpsHost,
+            vpsPort: tunnelData.vpsPort ?? 22,
+            sshUser: tunnelData.sshUser ?? "tunnel",
+            privateKey: tunnelData.privateKey ?? "",
+            remotePort: tunnelData.remotePort ?? 3307,
+            enabled: false,
+          });
+          console.log("[ConnectionSetup] SSH tunnel config pulled from server");
+        }
+      } catch {
+        // Non-blocking: ignore if tunnel config fetch fails
+        console.log("[ConnectionSetup] Could not pull SSH tunnel config (non-blocking)");
+      }
+
       // Mark as configured
       await api.setConfigured(true);
 

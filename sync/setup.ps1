@@ -2,14 +2,13 @@ param(
     [string]$GbkFilePath = "",
     [string]$GbakExePath = "",
     [string]$InstallDir = "",
-    [string]$SyncTime = "",
-    [string]$TailscaleKey = ""
+    [string]$SyncTime = ""
 )
 
 # ============================================================
 # SportLink Server - Installeur tout-en-un
 #
-# Installe : Node.js, MariaDB, Tailscale, BDD, service sync
+# Installe : Node.js, MariaDB, BDD, service sync
 # Usage : powershell -ExecutionPolicy Bypass -File setup.ps1
 #   Mode interactif : sans parametres
 #   Mode silencieux : -GbkFilePath "..." -GbakExePath "..." etc.
@@ -95,11 +94,11 @@ function Refresh-Path {
 }
 
 # ============================================================
-# [1/7] Prerequisites
+# [1/6] Prerequisites
 # ============================================================
 
 function Step-Prerequisites {
-    Write-Step 1 7 "Verification des prerequis"
+    Write-Step 1 6 "Verification des prerequis"
 
     # Check admin
     $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
@@ -171,18 +170,17 @@ function Step-Prerequisites {
 }
 
 # ============================================================
-# [2/7] Configuration
+# [2/6] Configuration
 # ============================================================
 
 function Step-Configuration {
-    Write-Step 2 7 "Configuration"
+    Write-Step 2 6 "Configuration"
 
     if ($NonInteractive) {
         # Mode non-interactif : utiliser les parametres fournis
         $script:GbkPath = $GbkFilePath
         $script:InstallDir = if ([string]::IsNullOrWhiteSpace($InstallDir)) { $DefaultInstallDir } else { $InstallDir }
         $script:SyncTime = if ([string]::IsNullOrWhiteSpace($SyncTime)) { $DefaultSyncTime } else { $SyncTime }
-        $script:TailscaleKey = $TailscaleKey
 
         if (-not (Test-Path $script:GbkPath)) {
             Write-Info "SV.GBK non present a $($script:GbkPath) - la sync sera lancee quand le fichier sera disponible."
@@ -203,7 +201,6 @@ function Step-Configuration {
 
         $script:InstallDir = Ask-Input "Repertoire d'installation" $DefaultInstallDir
         $script:SyncTime = Ask-Input "Heure de synchronisation quotidienne (HH:MM)" $DefaultSyncTime
-        $script:TailscaleKey = Read-Host "  Tailscale auth key (laisser vide pour ignorer Tailscale)"
     }
 
     Write-Ok "Configuration validee"
@@ -211,15 +208,14 @@ function Step-Configuration {
     Write-Info "  gbak.exe   : $($script:GbakPath)"
     Write-Info "  Install    : $($script:InstallDir)"
     Write-Info "  Sync       : $($script:SyncTime) chaque jour"
-    Write-Info "  Tailscale  : $(if ($script:TailscaleKey) { 'Oui' } else { 'Non' })"
 }
 
 # ============================================================
-# [3/7] Node.js
+# [3/6] Node.js
 # ============================================================
 
 function Step-NodeJS {
-    Write-Step 3 7 "Node.js"
+    Write-Step 3 6 "Node.js"
 
     if (Test-CommandExists "node") {
         $ver = node --version
@@ -252,11 +248,11 @@ function Step-NodeJS {
 }
 
 # ============================================================
-# [4/7] MariaDB
+# [4/6] MariaDB
 # ============================================================
 
 function Step-MariaDB {
-    Write-Step 4 7 "MariaDB"
+    Write-Step 4 6 "MariaDB"
 
     $mysqlCmd = $null
 
@@ -355,7 +351,9 @@ FLUSH PRIVILEGES;
         "003_custom_tables.sql",
         "005_ventes_daily.sql",
         "007_composite_indexes.sql",
-        "008_vpn_config.sql"
+        "008_vpn_config.sql",
+        "010_vpn_config_l2tp.sql",
+        "018_vpn_ssh_tunnel.sql"
     )
 
     foreach ($file in $sqlFiles) {
@@ -394,89 +392,11 @@ FLUSH PRIVILEGES;
 }
 
 # ============================================================
-# [5/7] Tailscale
-# ============================================================
-
-function Step-Tailscale {
-    Write-Step 5 7 "Tailscale"
-
-    if ([string]::IsNullOrWhiteSpace($script:TailscaleKey)) {
-        Write-Info "Tailscale ignore (pas de cle fournie)"
-        return
-    }
-
-    if (Test-CommandExists "tailscale") {
-        Write-Ok "Tailscale deja installe"
-    } else {
-        Write-Info "Tailscale non detecte, installation..."
-        $msiUrl = "https://pkgs.tailscale.com/stable/tailscale-setup-latest.exe"
-        $exePath = "$env:TEMP\tailscale-setup.exe"
-
-        Download-File $msiUrl $exePath
-
-        Write-Info "Installation silencieuse de Tailscale..."
-        Start-Process $exePath -ArgumentList "/install /quiet" -Wait -NoNewWindow
-
-        Refresh-Path
-        Start-Sleep -Seconds 3
-
-        if (-not (Test-CommandExists "tailscale")) {
-            # Try common install path
-            $tsPath = "C:\Program Files\Tailscale\tailscale.exe"
-            if (Test-Path $tsPath) {
-                $env:Path += ";C:\Program Files\Tailscale"
-            } else {
-                Write-Err "Tailscale installe mais non trouve dans le PATH."
-                Write-Info "Vous pouvez le configurer manuellement apres l'installation."
-                return
-            }
-        }
-
-        # Cleanup
-        Remove-Item $exePath -ErrorAction SilentlyContinue
-        Write-Ok "Tailscale installe"
-    }
-
-    # Connect with auth key
-    Write-Info "Connexion a Tailscale..."
-    try {
-        tailscale up --auth-key="$($script:TailscaleKey)" --unattended 2>$null
-        Start-Sleep -Seconds 3
-        $tsIp = tailscale ip -4 2>$null
-        if ($tsIp) {
-            $script:TailscaleIP = $tsIp.Trim()
-            Write-Ok "Tailscale connecte : $($script:TailscaleIP)"
-        } else {
-            Write-Info "Tailscale connecte (IP non recuperee)"
-        }
-    } catch {
-        Write-Err "Connexion Tailscale echouee : $_"
-        Write-Info "Vous pouvez le configurer manuellement : tailscale up --auth-key=..."
-    }
-
-    # Write VPN credentials to MariaDB so Electron clients can auto-configure
-    if ($script:TailscaleIP -and $script:MysqlCmd) {
-        Write-Info "Ecriture de la config VPN dans la base..."
-        $vpnSql = @'
-INSERT INTO _vpn_config (id, tailscale_ip, auth_key, tailnet_name)
-VALUES (1, '{TSIP}', '{TSKEY}', '')
-ON DUPLICATE KEY UPDATE
-  tailscale_ip = VALUES(tailscale_ip),
-  auth_key = VALUES(auth_key),
-  updated_at = CURRENT_TIMESTAMP;
-'@
-        $vpnSql = $vpnSql -replace '\{TSIP\}', $script:TailscaleIP -replace '\{TSKEY\}', $script:TailscaleKey
-        $vpnSql | & $script:MysqlCmd -u $DbUser -p$DbPassword $DbName 2>$null
-        Write-Ok "Config VPN enregistree dans _vpn_config"
-    }
-}
-
-# ============================================================
-# [6/7] Service SportLink
+# [5/6] Service SportLink
 # ============================================================
 
 function Step-Service {
-    Write-Step 6 7 "Service SportLink"
+    Write-Step 5 6 "Service SportLink"
 
     # Create install directory
     if (-not (Test-Path $script:InstallDir)) {
@@ -613,11 +533,11 @@ function Step-Service {
 }
 
 # ============================================================
-# [7/7] First sync
+# [6/6] First sync
 # ============================================================
 
 function Step-FirstSync {
-    Write-Step 7 7 "Premiere synchronisation"
+    Write-Step 6 6 "Premiere synchronisation"
     Write-Info "La premiere synchronisation n'est pas lancee automatiquement."
     Write-Info "Ouvrez 'SportLink Server' depuis le bureau et cliquez sur 'Lancer sync'."
 }
@@ -637,10 +557,6 @@ function Show-Summary {
     Write-Host "  Logs    : $($script:InstallDir)\logs\sync.log" -ForegroundColor White
     Write-Host "  Sync    : tous les jours a $($script:SyncTime)" -ForegroundColor White
 
-    if ($script:TailscaleIP) {
-        Write-Host "  VPN     : $($script:TailscaleIP)" -ForegroundColor White
-    }
-
     Write-Host ""
     Write-Host "  Commandes utiles :" -ForegroundColor Gray
     Write-Host "    Get-Service SportLinkSync          # Etat du service" -ForegroundColor Gray
@@ -658,7 +574,6 @@ Step-Prerequisites
 Step-Configuration
 Step-NodeJS
 Step-MariaDB
-Step-Tailscale
 Step-Service
 Step-FirstSync
 Show-Summary
