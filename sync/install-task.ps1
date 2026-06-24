@@ -8,17 +8,16 @@
 $TaskName = "SportLink-Sync-Nightly"
 $Description = "Synchronisation nightly Ginkoia (Firebird) vers MariaDB pour SportLink Server"
 
-# Chemin vers le script de sync (ajuster selon l'installation)
+# Chemin vers le script de sync compile
 $SyncDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ProjectRoot = Split-Path -Parent $SyncDir
 $NodePath = "node"
-$TsxPath = "npx"
-$ScriptPath = Join-Path $SyncDir "sync.ts"
+$ScriptPath = Join-Path $SyncDir "dist\sync.js"
 
-# Commande a executer
+# Commande a executer (mode incremental par defaut)
 $Action = New-ScheduledTaskAction `
-    -Execute $TsxPath `
-    -Argument "tsx `"$ScriptPath`"" `
+    -Execute $NodePath `
+    -Argument "`"$ScriptPath`"" `
     -WorkingDirectory $ProjectRoot
 
 # Declencheur : chaque jour a 02h00
@@ -31,7 +30,9 @@ $Settings = New-ScheduledTaskSettingsSet `
     -AllowStartIfOnBatteries `
     -DontStopIfGoingOnBatteries `
     -StartWhenAvailable `
-    -ExecutionTimeLimit (New-TimeSpan -Minutes 30)
+    -ExecutionTimeLimit (New-TimeSpan -Hours 6) `
+    -RestartCount 2 `
+    -RestartInterval (New-TimeSpan -Minutes 15)
 
 # Verifier si la tache existe deja
 $ExistingTask = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
@@ -40,19 +41,25 @@ if ($ExistingTask) {
     Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
 }
 
-# Creer la tache
+# Creer la tache (execute en tant que SYSTEM pour fonctionner sans login)
 Register-ScheduledTask `
     -TaskName $TaskName `
     -Description $Description `
     -Action $Action `
     -Trigger $Trigger `
     -Settings $Settings `
+    -User "SYSTEM" `
     -RunLevel Highest
 
 Write-Host ""
 Write-Host "Tache planifiee '$TaskName' installee avec succes."
 Write-Host "  Heure : 02h00 chaque jour"
 Write-Host "  Script : $ScriptPath"
+Write-Host "  Mode : incremental (par defaut)"
+Write-Host "  Timeout : 6 heures"
+Write-Host "  Retries : 2 (toutes les 15 min)"
+Write-Host "  Utilisateur : SYSTEM"
 Write-Host ""
 Write-Host "Pour verifier : Get-ScheduledTask -TaskName '$TaskName'"
 Write-Host "Pour executer manuellement : Start-ScheduledTask -TaskName '$TaskName'"
+Write-Host "Pour forcer un full sync : node `"$ScriptPath`" --full"
