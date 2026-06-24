@@ -538,8 +538,8 @@ async function syncTable(
     // Dernier batch restant
     if (Object.keys(currentRow).length > 0) {
       if (table.dateColumn && currentRow[table.dateColumn]) {
-        const dateVal = currentRow[table.dateColumn]!.substring(0, 10);
-        if (!earliestDate || dateVal < earliestDate) {
+        const dateVal: string = currentRow[table.dateColumn]!.substring(0, 10);
+        if (!earliestDate || dateVal < (earliestDate as string)) {
           earliestDate = dateVal;
         }
       }
