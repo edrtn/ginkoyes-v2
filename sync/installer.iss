@@ -63,10 +63,6 @@ var
   SyncPage: TWizardPage;
   SyncTimeEdit: TNewEdit;
 
-  // Page Tailscale
-  TailscalePage: TWizardPage;
-  TailscaleKeyEdit: TNewEdit;
-
 // -------------------------------------------------------
 // Auto-detection de gbak.exe
 // -------------------------------------------------------
@@ -123,7 +119,6 @@ procedure InitializeWizard;
 var
   LabelGbk, LabelGbkDesc, LabelGbak: TNewStaticText;
   LabelSync, LabelSyncDesc: TNewStaticText;
-  LabelTs, LabelTsDesc: TNewStaticText;
   DetectedGbak: String;
 begin
   // =====================================================
@@ -222,32 +217,6 @@ begin
   LabelSyncDesc.Left := 0;
   LabelSyncDesc.Font.Color := clGray;
 
-  // =====================================================
-  // Page 3 : Tailscale VPN
-  // =====================================================
-  TailscalePage := CreateCustomPage(SyncPage.ID,
-    'VPN Tailscale (optionnel)',
-    'Si vous disposez d''une cle Tailscale, entrez-la ci-dessous.');
-
-  LabelTs := TNewStaticText.Create(TailscalePage);
-  LabelTs.Parent := TailscalePage.Surface;
-  LabelTs.Caption := 'Cle d''authentification Tailscale :';
-  LabelTs.Top := 0;
-  LabelTs.Left := 0;
-
-  TailscaleKeyEdit := TNewEdit.Create(TailscalePage);
-  TailscaleKeyEdit.Parent := TailscalePage.Surface;
-  TailscaleKeyEdit.Top := LabelTs.Top + LabelTs.Height + 6;
-  TailscaleKeyEdit.Left := 0;
-  TailscaleKeyEdit.Width := FirebirdPage.SurfaceWidth;
-  TailscaleKeyEdit.Text := '';
-
-  LabelTsDesc := TNewStaticText.Create(TailscalePage);
-  LabelTsDesc.Parent := TailscalePage.Surface;
-  LabelTsDesc.Caption := 'Laissez vide pour ignorer la configuration Tailscale.';
-  LabelTsDesc.Top := TailscaleKeyEdit.Top + TailscaleKeyEdit.Height + 12;
-  LabelTsDesc.Left := 0;
-  LabelTsDesc.Font.Color := clGray;
 end;
 
 // -------------------------------------------------------
@@ -306,8 +275,7 @@ begin
       ' -GbkFilePath "' + EscapeParam(GbkFileEdit.Text) + '"' +
       ' -GbakExePath "' + EscapeParam(GbakExeEdit.Text) + '"' +
       ' -InstallDir "' + EscapeParam(ExpandConstant('{app}')) + '"' +
-      ' -SyncTime "' + EscapeParam(SyncTimeEdit.Text) + '"' +
-      ' -TailscaleKey "' + EscapeParam(TailscaleKeyEdit.Text) + '"';
+      ' -SyncTime "' + EscapeParam(SyncTimeEdit.Text) + '"';
 
     WizardForm.StatusLabel.Caption := 'Configuration de SportLink Server en cours...';
 
