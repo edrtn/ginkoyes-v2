@@ -14,6 +14,15 @@ contextBridge.exposeInMainWorld('api', {
   // Service
   getServiceStatus: () => ipcRenderer.invoke('get-service-status'),
 
+  // Config & Setup
+  getSyncConfig: () => ipcRenderer.invoke('get-sync-config'),
+  saveSyncConfig: (partial: any) => ipcRenderer.invoke('save-sync-config', partial),
+  testPathExists: (filePath: string) => ipcRenderer.invoke('test-path-exists', filePath),
+  browseFile: (options: { title?: string; filters?: { name: string; extensions: string[] }[] }) =>
+    ipcRenderer.invoke('browse-file', options),
+  detectInterbase: () => ipcRenderer.invoke('detect-interbase'),
+  checkSetupNeeded: () => ipcRenderer.invoke('check-setup-needed'),
+
   // Events
   onSyncOutput: (callback: (data: string) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, data: string) => callback(data);

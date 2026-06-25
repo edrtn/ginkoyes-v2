@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import { spawn, execFile } from 'child_process';
@@ -14,8 +14,25 @@ interface SyncConfig {
     password: string;
     database: string;
   };
+  interbase?: {
+    ibSourcePath?: string;
+    ibLocalPath?: string;
+    isqlPath?: string;
+    interbaseHome?: string;
+    user?: string;
+    password?: string;
+  };
+  network?: {
+    share?: string;
+    user?: string;
+    password?: string;
+  };
   sync: {
+    batchSize?: number;
     logPath: string;
+    schedule?: string;
+    liveSchedule?: string;
+    liveEnabled?: boolean;
   };
 }
 
@@ -274,10 +291,20 @@ function registerIpcHandlers(): void {
       }
     }
 
+    // Build env with INTERBASE home if configured
+    const spawnEnv: Record<string, string | undefined> = { ...process.env };
+    try {
+      const syncCfg = loadConfig();
+      if (syncCfg.interbase?.interbaseHome) {
+        spawnEnv.INTERBASE = syncCfg.interbase.interbaseHome;
+        sendLog(`[INFO] INTERBASE env: ${syncCfg.interbase.interbaseHome}`);
+      }
+    } catch {}
+
     try {
       syncProcess = spawn(nodePath, [syncScript], {
         cwd: installDir,
-        env: { ...process.env },
+        env: spawnEnv,
       });
     } catch (err: any) {
       sendLog(`[ERREUR] Impossible de lancer le processus: ${err.message}`);
@@ -335,6 +362,124 @@ function registerIpcHandlers(): void {
       return { lines };
     } catch (err: any) {
       return { lines: [], error: err.message };
+    }
+  });
+
+  // 7. get-sync-config : retourne le contenu complet de sync-config.json
+  ipcMain.handle('get-sync-config', async () => {
+    try {
+      const configPath = getConfigPath();
+      if (!fs.existsSync(configPath)) {
+        return { error: 'sync-config.json introuvable' };
+      }
+      const raw = fs.readFileSync(configPath, 'utf-8');
+      return JSON.parse(raw);
+    } catch (err: any) {
+      return { error: err.message };
+    }
+  });
+
+  // 8. save-sync-config : merge partiel dans sync-config.json
+  ipcMain.handle('save-sync-config', async (_event, partial: Partial<SyncConfig>) => {
+    try {
+      const configPath = getConfigPath();
+      let existing: any = {};
+      if (fs.existsSync(configPath)) {
+        existing = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+      }
+
+      // Merge each section
+      if (partial.interbase) {
+        existing.interbase = { ...existing.interbase, ...partial.interbase };
+      }
+      if (partial.network) {
+        existing.network = { ...existing.network, ...partial.network };
+      }
+      if (partial.sync) {
+        existing.sync = { ...existing.sync, ...partial.sync };
+      }
+
+      const json = JSON.stringify(existing, null, 2);
+      fs.writeFileSync(configPath, json, 'utf-8');
+
+      // Also write to dist/sync-config.json if it exists
+      const distConfig = path.join(path.dirname(configPath), 'dist', 'sync-config.json');
+      if (fs.existsSync(path.dirname(distConfig))) {
+        fs.writeFileSync(distConfig, json, 'utf-8');
+      }
+
+      return { success: true };
+    } catch (err: any) {
+      return { error: err.message };
+    }
+  });
+
+  // 9. test-path-exists : verifie si un chemin existe + retourne info
+  ipcMain.handle('test-path-exists', async (_event, filePath: string) => {
+    try {
+      if (!fs.existsSync(filePath)) {
+        return { exists: false };
+      }
+      const stats = fs.statSync(filePath);
+      return {
+        exists: true,
+        size: stats.size,
+        mtime: stats.mtime.toISOString(),
+      };
+    } catch (err: any) {
+      return { exists: false, error: err.message };
+    }
+  });
+
+  // 10. browse-file : dialog natif pour choisir un fichier
+  ipcMain.handle('browse-file', async (_event, options: { title?: string; filters?: { name: string; extensions: string[] }[] }) => {
+    if (!mainWindow) return { canceled: true };
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: options.title || 'Selectionner un fichier',
+      filters: options.filters || [],
+      properties: ['openFile'],
+    });
+    if (result.canceled || result.filePaths.length === 0) {
+      return { canceled: true };
+    }
+    return { canceled: false, filePath: result.filePaths[0] };
+  });
+
+  // 11. detect-interbase : scan des emplacements connus pour isql.exe
+  ipcMain.handle('detect-interbase', async () => {
+    const candidates = [
+      'C:\\Embarcadero\\InterBase\\bin\\isql.exe',
+      'C:\\Program Files\\Embarcadero\\InterBase\\bin\\isql.exe',
+      'C:\\Program Files (x86)\\Embarcadero\\InterBase\\bin\\isql.exe',
+      'C:\\InterBase\\bin\\isql.exe',
+      'C:\\Program Files\\InterBase\\bin\\isql.exe',
+    ];
+    for (const candidate of candidates) {
+      if (fs.existsSync(candidate)) {
+        // Derive interbaseHome from bin/isql.exe path
+        const interbaseHome = path.dirname(path.dirname(candidate));
+        return { found: true, isqlPath: candidate, interbaseHome };
+      }
+    }
+    return { found: false };
+  });
+
+  // 12. check-setup-needed : true si pas de section interbase valide
+  ipcMain.handle('check-setup-needed', async () => {
+    try {
+      const configPath = getConfigPath();
+      if (!fs.existsSync(configPath)) {
+        return { needed: true };
+      }
+      const raw = fs.readFileSync(configPath, 'utf-8');
+      const cfg = JSON.parse(raw);
+      // Setup needed if no interbase section or no ibSourcePath
+      if (!cfg.interbase || !cfg.interbase.ibSourcePath) {
+        return { needed: true };
+      }
+      return { needed: false };
+    } catch {
+      return { needed: true };
     }
   });
 

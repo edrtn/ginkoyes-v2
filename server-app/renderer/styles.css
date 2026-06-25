@@ -205,10 +205,169 @@ pre::-webkit-scrollbar-thumb {
   border-radius: 4px;
 }
 
+/* Header buttons */
+
+.header-buttons {
+  display: flex;
+  gap: 8px;
+}
+
+/* Wizard & Settings */
+
+.wizard,
+.settings-page {
+  padding: 24px 20px;
+  display: flex;
+  justify-content: center;
+}
+
+.wizard-inner {
+  max-width: 600px;
+  width: 100%;
+}
+
+.wizard-inner > h2 {
+  font-size: 20px;
+  color: #1a1a2e;
+  margin-bottom: 4px;
+}
+
+.wizard-subtitle {
+  color: #666;
+  font-size: 13px;
+  margin-bottom: 20px;
+}
+
+.wizard-section {
+  background: #fff;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.wizard-section h3 {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1a1a2e;
+  margin-bottom: 12px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #eee;
+}
+
+.input-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.input-row input[type="text"] {
+  flex: 1;
+  max-width: none;
+}
+
+.btn-secondary {
+  background: #e9ecef;
+  color: #333;
+  border: 1px solid #ccc;
+  padding: 5px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  margin-top: 0;
+  white-space: nowrap;
+}
+
+.btn-secondary:hover {
+  background: #dee2e6;
+}
+
+.btn-primary {
+  background: #1a1a2e;
+  color: #fff;
+  border: none;
+  padding: 9px 24px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  margin-top: 8px;
+}
+
+.btn-primary:hover {
+  background: #0f3460;
+}
+
+.test-result {
+  display: inline-block;
+  font-size: 12px;
+  padding: 2px 10px;
+  border-radius: 12px;
+  margin-top: 4px;
+}
+
+.test-result.test-ok {
+  background: #d4edda;
+  color: #155724;
+}
+
+.test-result.test-fail {
+  background: #f8d7da;
+  color: #721c24;
+}
+
+.save-status {
+  display: inline-block;
+  margin-left: 12px;
+  font-size: 13px;
+  color: green;
+}
+
+.settings-buttons {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+/* Wizard inputs */
+
+.wizard-section input[type="text"],
+.wizard-section input[type="password"] {
+  padding: 5px 10px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 13px;
+  flex: 1;
+  max-width: 300px;
+}
+
+.wizard-section input[type="text"]:focus,
+.wizard-section input[type="password"]:focus {
+  outline: none;
+  border-color: #0f3460;
+}
+
+.wizard-section select {
+  padding: 5px 10px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.wizard-section label {
+  font-weight: 500;
+  color: #666;
+  min-width: 120px;
+}
+
 /* Responsive */
 
 @media (max-width: 700px) {
   .row {
     flex-direction: column;
+  }
+  .input-row {
+    flex-direction: column;
+    align-items: stretch;
   }
 }

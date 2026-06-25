@@ -9,10 +9,159 @@
 <body>
   <header>
     <h1>SportLink Server</h1>
-    <button id="btn-refresh" title="Rafraichir">Rafraichir</button>
+    <div class="header-buttons">
+      <button id="btn-settings" title="Parametres">Parametres</button>
+      <button id="btn-refresh" title="Rafraichir">Rafraichir</button>
+    </div>
   </header>
 
-  <main>
+  <!-- ========== SETUP WIZARD ========== -->
+  <div id="setup-wizard" class="wizard" style="display:none">
+    <div class="wizard-inner">
+      <h2>Configuration initiale</h2>
+      <p class="wizard-subtitle">Configurez les parametres InterBase pour demarrer la synchronisation.</p>
+
+      <!-- Section : Source InterBase -->
+      <div class="wizard-section">
+        <h3>Source InterBase (.IB)</h3>
+        <div class="input-row">
+          <input type="text" id="wiz-ib-source" placeholder="\\SERVEUR\Ginkoia\Data\GINKOIA.IB">
+          <button class="btn-secondary" id="wiz-browse-ib">Parcourir</button>
+          <button class="btn-secondary" id="wiz-test-ib">Tester</button>
+        </div>
+        <span id="wiz-test-ib-result" class="test-result"></span>
+      </div>
+
+      <!-- Section : Reseau -->
+      <div class="wizard-section">
+        <h3>Acces reseau (partage Windows)</h3>
+        <div class="field">
+          <label for="wiz-net-user">Utilisateur</label>
+          <input type="text" id="wiz-net-user" placeholder="sportlink">
+        </div>
+        <div class="field">
+          <label for="wiz-net-password">Mot de passe</label>
+          <input type="password" id="wiz-net-password" placeholder="Mot de passe partage">
+        </div>
+      </div>
+
+      <!-- Section : InterBase (isql) -->
+      <div class="wizard-section">
+        <h3>InterBase (isql.exe)</h3>
+        <div class="input-row">
+          <input type="text" id="wiz-isql-path" placeholder="C:\Embarcadero\InterBase\bin\isql.exe">
+          <button class="btn-secondary" id="wiz-browse-isql">Parcourir</button>
+        </div>
+        <span id="wiz-detect-status" class="test-result"></span>
+        <div class="field">
+          <label for="wiz-ib-user">Utilisateur IB</label>
+          <input type="text" id="wiz-ib-user" value="SYSDBA">
+        </div>
+        <div class="field">
+          <label for="wiz-ib-password">Mot de passe IB</label>
+          <input type="password" id="wiz-ib-password" value="masterkey">
+        </div>
+      </div>
+
+      <!-- Section : Sync live -->
+      <div class="wizard-section">
+        <h3>Synchronisation live</h3>
+        <div class="field">
+          <label for="wiz-live-enabled">
+            <input type="checkbox" id="wiz-live-enabled" checked> Activer la sync live
+          </label>
+        </div>
+        <div class="field">
+          <label for="wiz-live-interval">Intervalle</label>
+          <select id="wiz-live-interval">
+            <option value="*/5 * * * *">5 minutes</option>
+            <option value="*/10 * * * *">10 minutes</option>
+            <option value="*/15 * * * *">15 minutes</option>
+            <option value="*/30 * * * *">30 minutes</option>
+          </select>
+        </div>
+      </div>
+
+      <button id="wiz-save" class="btn-primary">Enregistrer</button>
+      <span id="wiz-save-status" class="save-status"></span>
+    </div>
+  </div>
+
+  <!-- ========== SETTINGS PAGE ========== -->
+  <div id="settings-page" class="settings-page" style="display:none">
+    <div class="wizard-inner">
+      <h2>Parametres InterBase</h2>
+
+      <!-- Section : Source InterBase -->
+      <div class="wizard-section">
+        <h3>Source InterBase (.IB)</h3>
+        <div class="input-row">
+          <input type="text" id="set-ib-source" placeholder="\\SERVEUR\Ginkoia\Data\GINKOIA.IB">
+          <button class="btn-secondary" id="set-browse-ib">Parcourir</button>
+          <button class="btn-secondary" id="set-test-ib">Tester</button>
+        </div>
+        <span id="set-test-ib-result" class="test-result"></span>
+      </div>
+
+      <!-- Section : Reseau -->
+      <div class="wizard-section">
+        <h3>Acces reseau (partage Windows)</h3>
+        <div class="field">
+          <label for="set-net-user">Utilisateur</label>
+          <input type="text" id="set-net-user" placeholder="sportlink">
+        </div>
+        <div class="field">
+          <label for="set-net-password">Mot de passe</label>
+          <input type="password" id="set-net-password" placeholder="Mot de passe partage">
+        </div>
+      </div>
+
+      <!-- Section : InterBase (isql) -->
+      <div class="wizard-section">
+        <h3>InterBase (isql.exe)</h3>
+        <div class="input-row">
+          <input type="text" id="set-isql-path" placeholder="C:\Embarcadero\InterBase\bin\isql.exe">
+          <button class="btn-secondary" id="set-browse-isql">Parcourir</button>
+        </div>
+        <div class="field">
+          <label for="set-ib-user">Utilisateur IB</label>
+          <input type="text" id="set-ib-user" value="SYSDBA">
+        </div>
+        <div class="field">
+          <label for="set-ib-password">Mot de passe IB</label>
+          <input type="password" id="set-ib-password" value="masterkey">
+        </div>
+      </div>
+
+      <!-- Section : Sync live -->
+      <div class="wizard-section">
+        <h3>Synchronisation live</h3>
+        <div class="field">
+          <label for="set-live-enabled">
+            <input type="checkbox" id="set-live-enabled"> Activer la sync live
+          </label>
+        </div>
+        <div class="field">
+          <label for="set-live-interval">Intervalle</label>
+          <select id="set-live-interval">
+            <option value="*/5 * * * *">5 minutes</option>
+            <option value="*/10 * * * *">10 minutes</option>
+            <option value="*/15 * * * *">15 minutes</option>
+            <option value="*/30 * * * *">30 minutes</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="settings-buttons">
+        <button id="set-save" class="btn-primary">Enregistrer</button>
+        <button id="set-back" class="btn-secondary">Retour</button>
+      </div>
+      <span id="set-save-status" class="save-status"></span>
+    </div>
+  </div>
+
+  <!-- ========== DASHBOARD ========== -->
+  <main id="dashboard">
     <div class="row">
       <!-- Card Service -->
       <div class="card">
