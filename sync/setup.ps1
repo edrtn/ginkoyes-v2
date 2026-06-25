@@ -19,8 +19,10 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-# Mode non-interactif si au moins GbkFilePath est fourni
-$NonInteractive = -not [string]::IsNullOrWhiteSpace($GbkFilePath)
+# Mode non-interactif si InstallDir ou GbkFilePath est fourni (appel depuis InnoSetup)
+$NonInteractive = (-not [string]::IsNullOrWhiteSpace($GbkFilePath)) -or (-not [string]::IsNullOrWhiteSpace($InstallDir))
+# Mode sans Firebird si GbkFilePath n'est pas fourni (config sera faite dans l'app Electron)
+$SkipFirebird = [string]::IsNullOrWhiteSpace($GbkFilePath)
 
 # ============================================================
 # Variables globales
@@ -112,8 +114,11 @@ function Step-Prerequisites {
     $os = [System.Environment]::OSVersion
     Write-Ok "OS : $($os.VersionString)"
 
-    # Check Firebird / gbak.exe
-    if (-not [string]::IsNullOrWhiteSpace($GbakExePath)) {
+    # Check Firebird / gbak.exe (skip si config sera faite dans l'app Electron)
+    if ($SkipFirebird) {
+        Write-Ok "Configuration Firebird/InterBase differee (wizard Electron)"
+        $script:GbakPath = ""
+    } elseif (-not [string]::IsNullOrWhiteSpace($GbakExePath)) {
         # Parametre fourni par l'installeur GUI
         $script:GbakPath = $GbakExePath
         if (Test-Path $script:GbakPath) {
@@ -150,20 +155,21 @@ function Step-Prerequisites {
     }
 
     # Configure Firebird Legacy Auth (requis par node-firebird)
-    $fbDir = Split-Path -Parent $script:GbakPath
-    $fbConf = Join-Path $fbDir "firebird.conf"
-    if (Test-Path $fbConf) {
-        $confContent = Get-Content $fbConf -Raw
-        if ($confContent -notmatch "(?m)^AuthServer\s*=.*Legacy_Auth") {
-            Add-Content -Path $fbConf -Value "`nAuthServer = Legacy_Auth, Srp, Win_Sspi"
-            Add-Content -Path $fbConf -Value "AuthClient = Legacy_Auth, Srp, Win_Sspi"
-            Add-Content -Path $fbConf -Value "WireCrypt = Disabled"
-            Write-Ok "Firebird configure pour Legacy Auth"
-            # Redemarrer le service Firebird pour appliquer
-            $fbServices = Get-Service -DisplayName "*Firebird*" -ErrorAction SilentlyContinue
-            foreach ($svc in $fbServices) {
-                Restart-Service $svc.Name -Force -ErrorAction SilentlyContinue
-                Start-Sleep -Seconds 2
+    if (-not [string]::IsNullOrWhiteSpace($script:GbakPath)) {
+        $fbDir = Split-Path -Parent $script:GbakPath
+        $fbConf = Join-Path $fbDir "firebird.conf"
+        if (Test-Path $fbConf) {
+            $confContent = Get-Content $fbConf -Raw
+            if ($confContent -notmatch "(?m)^AuthServer\s*=.*Legacy_Auth") {
+                Add-Content -Path $fbConf -Value "`nAuthServer = Legacy_Auth, Srp, Win_Sspi"
+                Add-Content -Path $fbConf -Value "AuthClient = Legacy_Auth, Srp, Win_Sspi"
+                Add-Content -Path $fbConf -Value "WireCrypt = Disabled"
+                Write-Ok "Firebird configure pour Legacy Auth"
+                $fbServices = Get-Service -DisplayName "*Firebird*" -ErrorAction SilentlyContinue
+                foreach ($svc in $fbServices) {
+                    Restart-Service $svc.Name -Force -ErrorAction SilentlyContinue
+                    Start-Sleep -Seconds 2
+                }
             }
         }
     }
@@ -176,7 +182,13 @@ function Step-Prerequisites {
 function Step-Configuration {
     Write-Step 2 6 "Configuration"
 
-    if ($NonInteractive) {
+    if ($SkipFirebird) {
+        # Mode InnoSetup simplifie : pas de config Firebird, sera faite dans l'app Electron
+        $script:GbkPath = ""
+        $script:InstallDir = if ([string]::IsNullOrWhiteSpace($InstallDir)) { $DefaultInstallDir } else { $InstallDir }
+        $script:SyncTime = $DefaultSyncTime
+        Write-Ok "Configuration Firebird differee au wizard Electron"
+    } elseif ($NonInteractive) {
         # Mode non-interactif : utiliser les parametres fournis
         $script:GbkPath = $GbkFilePath
         $script:InstallDir = if ([string]::IsNullOrWhiteSpace($InstallDir)) { $DefaultInstallDir } else { $InstallDir }
@@ -352,8 +364,17 @@ FLUSH PRIVILEGES;
         "005_ventes_daily.sql",
         "007_composite_indexes.sql",
         "008_vpn_config.sql",
+        "009_add_sum_cout.sql",
         "010_vpn_config_l2tp.sql",
-        "018_vpn_ssh_tunnel.sql"
+        "011_atelier_tables.sql",
+        "012_atelier_extended.sql",
+        "013_rapports_ia.sql",
+        "014_analyses_achats.sql",
+        "015_negretour_tables.sql",
+        "016_agrmouvement_table.sql",
+        "017_article_duplicates.sql",
+        "018_vpn_ssh_tunnel.sql",
+        "019_sync_progress.sql"
     )
 
     foreach ($file in $sqlFiles) {
@@ -386,6 +407,21 @@ FLUSH PRIVILEGES;
             try { $procContent | & $mysqlCmd -u $DbUser "-p$DbPassword" $DbName 2>&1 | Out-Null } catch {}
         }
         Write-Ok "Procedure refresh_ventes_daily() creee"
+    }
+
+    # Run incremental stored procedure
+    $procFile2 = Join-Path $sqlDir "020_refresh_ventes_daily_incremental.sql"
+    if (Test-Path $procFile2) {
+        Write-Info "Execution : 020_refresh_ventes_daily_incremental.sql"
+        try { & $mysqlCmd -u $DbUser "-p$DbPassword" $DbName -e "SOURCE $procFile2" 2>&1 | Out-Null } catch {}
+        if ($LASTEXITCODE -ne 0) {
+            $procContent = Get-Content $procFile2 -Raw
+            $procContent = $procContent -replace 'DELIMITER \$\$', ''
+            $procContent = $procContent -replace '\$\$', ';'
+            $procContent = $procContent -replace 'DELIMITER ;', ''
+            try { $procContent | & $mysqlCmd -u $DbUser "-p$DbPassword" $DbName 2>&1 | Out-Null } catch {}
+        }
+        Write-Ok "Procedure refresh_ventes_daily_since() creee"
     }
 
     Write-Ok "Base de donnees configuree"
@@ -444,18 +480,9 @@ function Step-Service {
     $cronExpr = "$minute $hour * * *"
 
     # Generate sync-config.json
-    $tempFdbPath = Join-Path $backupDir "temp_sync.fdb"
     $logPath = Join-Path $logsDir "sync.log"
 
     $configObj = @{
-        firebird = @{
-            gbkSourcePath = $script:GbkPath
-            gbkLocalPath = Join-Path $script:InstallDir "backup\SV.GBK"
-            tempFdbPath = $tempFdbPath
-            gbakPath = $script:GbakPath
-            user = "SYSDBA"
-            password = "ginkoia"
-        }
         mariadb = @{
             host = "127.0.0.1"
             port = 3306
@@ -467,6 +494,19 @@ function Step-Service {
             batchSize = 1000
             logPath = $logPath
             schedule = $cronExpr
+        }
+    }
+
+    # Ajouter la section firebird seulement si les chemins sont fournis
+    if (-not [string]::IsNullOrWhiteSpace($script:GbkPath)) {
+        $tempFdbPath = Join-Path $backupDir "temp_sync.fdb"
+        $configObj.firebird = @{
+            gbkSourcePath = $script:GbkPath
+            gbkLocalPath = Join-Path $script:InstallDir "backup\SV.GBK"
+            tempFdbPath = $tempFdbPath
+            gbakPath = $script:GbakPath
+            user = "SYSDBA"
+            password = "ginkoia"
         }
     }
     $configJson = $configObj | ConvertTo-Json -Depth 3
