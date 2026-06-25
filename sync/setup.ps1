@@ -511,8 +511,12 @@ function Step-Service {
     }
     $configJson = $configObj | ConvertTo-Json -Depth 3
     $configPath = Join-Path $script:InstallDir "sync-config.json"
-    [IO.File]::WriteAllText($configPath, $configJson)
-    Write-Ok "sync-config.json genere"
+    if (Test-Path $configPath) {
+        Write-Ok "sync-config.json existant conserve (pas d'ecrasement)"
+    } else {
+        [IO.File]::WriteAllText($configPath, $configJson)
+        Write-Ok "sync-config.json genere"
+    }
 
     # Create package.json for the service
     $pkgJson = @{
