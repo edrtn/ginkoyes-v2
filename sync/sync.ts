@@ -73,6 +73,11 @@ interface TableDef {
   idColumn?: string;     // PK column for incremental sync
   dateColumn?: string;   // date column to track earliest new date (for ventes_daily)
   where?: string;        // static SQL filter (e.g. date >= '2022-01-01')
+  // For child tables: catch-up via parent's date (handles multi-counter IDs in Ginkoia)
+  parentTable?: string;
+  parentIdColumn?: string;
+  parentFkColumn?: string;
+  parentDateColumn?: string;
 }
 
 // ============================================================
@@ -140,27 +145,32 @@ const TABLES: TableDef[] = [
     strategy: "incremental", idColumn: "TKE_ID", dateColumn: "TKE_DATE",
     where: "TKE_DATE >= '2022-01-01'" },
   { name: "CSHTICKETL", columns: ["TKL_ID", "TKL_TKEID", "TKL_ARTID", "TKL_NOM", "TKL_QTE", "TKL_PXBRUT", "TKL_REMISE", "TKL_PXNET", "TKL_PXNNHT", "TKL_TGFID", "TKL_COUID"],
-    strategy: "incremental", idColumn: "TKL_ID" },
+    strategy: "incremental", idColumn: "TKL_ID",
+    parentTable: "CSHTICKET", parentIdColumn: "TKE_ID", parentFkColumn: "TKL_TKEID", parentDateColumn: "TKE_DATE" },
   { name: "NEGBL", columns: ["BLE_ID", "BLE_DATE", "BLE_NUMERO", "BLE_WEB"],
     strategy: "incremental", idColumn: "BLE_ID", dateColumn: "BLE_DATE",
     where: "BLE_DATE >= '2022-01-01'" },
   { name: "NEGBLL", columns: ["BLL_ID", "BLL_BLEID", "BLL_ARTID", "BLL_QTE", "BLL_PXBRUT", "BLL_PXNET", "BLL_PXNN", "BLL_TGFID", "BLL_COUID"],
-    strategy: "incremental", idColumn: "BLL_ID" },
+    strategy: "incremental", idColumn: "BLL_ID",
+    parentTable: "NEGBL", parentIdColumn: "BLE_ID", parentFkColumn: "BLL_BLEID", parentDateColumn: "BLE_DATE" },
   { name: "COMBCDE", columns: ["CDE_ID", "CDE_COLID", "CDE_FOUID", "CDE_DATE"],
-    strategy: "incremental", idColumn: "CDE_ID",
+    strategy: "incremental", idColumn: "CDE_ID", dateColumn: "CDE_DATE",
     where: "CDE_DATE >= '2022-01-01'" },
   { name: "COMBCDEL", columns: ["CDL_ID", "CDL_CDEID", "CDL_ARTID", "CDL_COUID", "CDL_TGFID", "CDL_QTE", "CDL_PXACHAT", "CDL_PXVENTE", "CDL_REMISE1", "CDL_REMISE2", "CDL_REMISE3"],
-    strategy: "incremental", idColumn: "CDL_ID" },
+    strategy: "incremental", idColumn: "CDL_ID",
+    parentTable: "COMBCDE", parentIdColumn: "CDE_ID", parentFkColumn: "CDL_CDEID", parentDateColumn: "CDE_DATE" },
   { name: "RECBR", columns: ["BRE_ID", "BRE_DATE", "BRE_NUMERO", "BRE_NUMFOURN", "BRE_FOUID", "BRE_COLID"],
-    strategy: "incremental", idColumn: "BRE_ID",
+    strategy: "incremental", idColumn: "BRE_ID", dateColumn: "BRE_DATE",
     where: "BRE_DATE >= '2022-01-01'" },
   { name: "RECBRL", columns: ["BRL_ID", "BRL_BREID", "BRL_ARTID", "BRL_QTE", "BRL_PXACHAT", "BRL_PXVENTE", "BRL_TGFID", "BRL_COUID"],
-    strategy: "incremental", idColumn: "BRL_ID" },
+    strategy: "incremental", idColumn: "BRL_ID",
+    parentTable: "RECBR", parentIdColumn: "BRE_ID", parentFkColumn: "BRL_BREID", parentDateColumn: "BRE_DATE" },
   { name: "NEGRETOUR", columns: ["RTE_ID", "RTE_BLEID", "RTE_BLENUMERO", "RTE_DATE", "RTE_ETAT", "RTE_TYPE", "RTE_CLTID", "RTE_TKEID"],
     strategy: "incremental", idColumn: "RTE_ID", dateColumn: "RTE_DATE",
     where: "RTE_DATE >= '2022-01-01'" },
   { name: "NEGRETOURL", columns: ["RTL_ID", "RTL_RTEID", "RTL_BLLID", "RTL_QTERETOUR", "RTL_QTEREMBOURSEE", "RTL_PXVTE", "RTL_MOTIFCODE", "RTL_MOTIFLIBELLE", "RTL_EAN", "RTL_MRKCODE", "RTL_MODELCODESAP"],
-    strategy: "incremental", idColumn: "RTL_ID" },
+    strategy: "incremental", idColumn: "RTL_ID",
+    parentTable: "NEGRETOUR", parentIdColumn: "RTE_ID", parentFkColumn: "RTL_RTEID", parentDateColumn: "RTE_DATE" },
   { name: "AGRMOUVEMENT", columns: ["MVT_ID", "MVT_TYPE", "MVT_ARTID", "MVT_TGFID", "MVT_COUID", "MVT_DATE", "MVT_QTE", "MVT_PXUBRUT", "MVT_PXUNET", "MVT_SENS", "MVT_TYPID", "MVT_CLTID"],
     strategy: "incremental", idColumn: "MVT_ID", dateColumn: "MVT_DATE",
     where: "MVT_DATE >= '2022-01-01'" },
@@ -333,6 +343,38 @@ async function getLastMaxId(pool: mysql.Pool, tableName: string): Promise<number
   return result.length > 0 ? Number(result[0].last_max_id) : 0;
 }
 
+/**
+ * Get the catch-up date for hybrid incremental sync.
+ * Ginkoia uses multi-counter IDs (each counter has its own ID range),
+ * so pure ID-based incremental misses new records from lower-ID counters.
+ * This returns MAX(dateColumn) - 2 days to catch those records.
+ */
+async function getCatchUpDate(pool: mysql.Pool, table: TableDef): Promise<string | null> {
+  let dateCol: string;
+  let tableName: string;
+
+  if (table.dateColumn) {
+    dateCol = table.dateColumn;
+    tableName = table.name;
+  } else if (table.parentTable && table.parentDateColumn) {
+    dateCol = table.parentDateColumn;
+    tableName = table.parentTable;
+  } else {
+    return null;
+  }
+
+  const [rows] = await pool.execute(
+    `SELECT MAX(${dateCol}) AS max_date FROM ${tableName}`
+  );
+  const result = rows as any[];
+  const maxDate = result[0]?.max_date;
+  if (!maxDate) return null;
+
+  const d = new Date(maxDate);
+  d.setDate(d.getDate() - 2);
+  return d.toISOString().substring(0, 10);
+}
+
 async function updateSyncProgress(
   pool: mysql.Pool,
   tableName: string,
@@ -379,13 +421,33 @@ async function syncTable(
   const tempSqlFile = path.join(tempDir, `gk_${table.name}.sql`);
   const tempOutFile = path.join(tempDir, `gk_${table.name}.out`);
 
-  // Build WHERE clause
+  // Build WHERE clause — hybrid ID + date to handle multi-counter IDs
   const whereParts: string[] = [];
   if (isIncremental && table.idColumn) {
-    whereParts.push(`${table.idColumn} > ${lastMaxId}`);
+    const catchUpDate = await getCatchUpDate(pool, table);
+
+    if (catchUpDate) {
+      if (table.dateColumn) {
+        // Hybrid: new high-IDs OR recent dates (catches all counters)
+        whereParts.push(`(${table.idColumn} > ${lastMaxId} OR ${table.dateColumn} >= '${catchUpDate}')`);
+        log(`  catch-up >= ${catchUpDate}`);
+      } else if (table.parentTable && table.parentFkColumn && table.parentIdColumn && table.parentDateColumn) {
+        // Child table: new high-IDs OR rows linked to recently-dated parents
+        whereParts.push(`(${table.idColumn} > ${lastMaxId} OR ${table.parentFkColumn} IN (SELECT ${table.parentIdColumn} FROM ${table.parentTable} WHERE ${table.parentDateColumn} >= '${catchUpDate}'))`);
+        log(`  catch-up via ${table.parentTable} >= ${catchUpDate}`);
+      } else {
+        whereParts.push(`${table.idColumn} > ${lastMaxId}`);
+      }
+    } else {
+      // No data yet (first incremental) — ID-based only
+      whereParts.push(`${table.idColumn} > ${lastMaxId}`);
+    }
+    // Apply static date filter as lower bound
+    if (table.where) {
+      whereParts.push(table.where);
+    }
   }
   if (table.where && !isIncremental) {
-    // Static date filters only apply in full mode (incremental uses ID-based filtering)
     whereParts.push(table.where);
   }
   const whereClause = whereParts.length > 0 ? " WHERE " + whereParts.join(" AND ") : "";
